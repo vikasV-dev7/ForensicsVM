@@ -2,7 +2,7 @@
 #include "VmId.hpp"
 #include "CpuConfig.hpp"
 #include "MemoryConfig.hpp"
-#include "StorageConfig.hpp"
+#include "StorageAttachment.hpp"
 #include "NetworkConfig.hpp"
 #include "FirmwareConfig.hpp"
 #include "DisplayConfig.hpp"
@@ -18,7 +18,7 @@ struct VmConfig {
     
     CpuConfig cpu;
     MemoryConfig memory;
-    std::vector<StorageConfig> storage;
+    std::vector<StorageAttachment> storage;
     std::vector<NetworkConfig> network;
     FirmwareConfig firmware;
     DisplayConfig display;

@@ -44,6 +44,43 @@ int main() {
         failed++;
     }
 
+    // Add storage test
+    VmConfig configWithStorage = config;
+    configWithStorage.storage.push_back(StorageAttachment{
+        "disk1",
+        EvidenceSource("C:\\ev1.raw", DiskFormat::Raw),
+        AccessMode::ReadOnly,
+        BusType::VirtIO,
+        true
+    });
+    configWithStorage.storage.push_back(StorageAttachment{
+        "disk2",
+        EvidenceSource("C:\\ev2.qcow2", DiskFormat::Qcow2),
+        AccessMode::Overlay,
+        BusType::VirtIO,
+        false
+    });
+
+    std::map<std::string, std::string> overlayPaths = {
+        {"disk2", "C:\\overlays\\disk2.qcow2"}
+    };
+
+    auto specStorage = builder.build(VmId("test-vm"), configWithStorage, "C:\\qemu\\qemu-system-x86_64.exe", overlayPaths);
+    
+    auto hasArgStorage = [&](const std::string& arg) {
+        return std::find(specStorage.arguments.begin(), specStorage.arguments.end(), arg) != specStorage.arguments.end();
+    };
+
+    if (!hasArgStorage("file=C:\\ev1.raw,format=raw,media=disk,readonly=on")) {
+        std::cerr << "Fail: Missing read-only storage argument\n";
+        failed++;
+    }
+
+    if (!hasArgStorage("file=C:\\overlays\\disk2.qcow2,format=qcow2,media=disk")) {
+        std::cerr << "Fail: Missing overlay storage argument\n";
+        failed++;
+    }
+
     if (failed == 0) {
         std::cout << "QemuCommandBuilderTest PASS\n";
         return 0;

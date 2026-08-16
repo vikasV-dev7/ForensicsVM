@@ -11,6 +11,8 @@ add_library(QemuInfrastructure STATIC
     QemuProcess.cpp
     QemuBackend.cpp
     QmpClient.cpp
+    image/QemuImgLocator.cpp
+    image/QemuImageTool.cpp
 )
 
 

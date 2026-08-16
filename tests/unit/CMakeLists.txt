@@ -9,6 +9,10 @@ add_executable(VmConfigTest VmConfigTest.cpp)
 target_link_libraries(VmConfigTest PRIVATE VmDomain)
 add_test(NAME VmConfigTest COMMAND VmConfigTest)
 
+add_executable(StorageAttachmentTest StorageAttachmentTest.cpp)
+target_link_libraries(StorageAttachmentTest PRIVATE VmDomain)
+add_test(NAME StorageAttachmentTest COMMAND StorageAttachmentTest)
+
 add_executable(VmManagerTest VmManagerTest.cpp)
 target_link_libraries(VmManagerTest PRIVATE VmManagement InMemoryInfrastructure)
 add_test(NAME VmManagerTest COMMAND VmManagerTest)
@@ -24,6 +28,10 @@ add_test(NAME QemuCommandBuilderTest COMMAND QemuCommandBuilderTest)
 add_executable(QemuLocatorTest QemuLocatorTest.cpp)
 target_link_libraries(QemuLocatorTest PRIVATE QemuInfrastructure)
 add_test(NAME QemuLocatorTest COMMAND QemuLocatorTest)
+
+add_executable(QemuImgLocatorTest QemuImgLocatorTest.cpp)
+target_link_libraries(QemuImgLocatorTest PRIVATE QemuInfrastructure)
+add_test(NAME QemuImgLocatorTest COMMAND QemuImgLocatorTest)
 
 add_executable(QemuProcessTest QemuProcessTest.cpp)
 target_link_libraries(QemuProcessTest PRIVATE QemuInfrastructure)

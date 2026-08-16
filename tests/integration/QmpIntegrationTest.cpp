@@ -1,6 +1,7 @@
 #include "infrastructure/qemu/QemuBackend.hpp"
 #include "infrastructure/qemu/QemuLocator.hpp"
 #include "infrastructure/qemu/QemuCommandBuilder.hpp"
+#include "infrastructure/qemu/image/QemuImageTool.hpp"
 #include "vm/domain/VmConfig.hpp"
 #include "vm/domain/VmId.hpp"
 #include <iostream>
@@ -15,7 +16,9 @@ int main() {
 
     auto locator = std::make_unique<DefaultQemuLocator>();
     auto cmdBuilder = std::make_unique<DefaultQemuCommandBuilder>();
-    QemuBackend backend(std::move(locator), std::move(cmdBuilder));
+    auto imgLocator = std::make_unique<image::DefaultQemuImgLocator>();
+    auto imgTool = std::make_unique<image::QemuImageTool>(std::move(imgLocator));
+    QemuBackend backend(std::move(locator), std::move(cmdBuilder), std::move(imgTool));
 
     VmId id("qmp-integration-test");
     VmConfig config{
