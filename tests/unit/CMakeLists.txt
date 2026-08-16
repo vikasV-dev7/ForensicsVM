@@ -16,3 +16,19 @@ add_test(NAME VmManagerTest COMMAND VmManagerTest)
 add_executable(CompositionTest CompositionTest.cpp)
 target_link_libraries(CompositionTest PRIVATE ApplicationBootstrap VmManagement)
 add_test(NAME CompositionTest COMMAND CompositionTest)
+
+add_executable(QemuCommandBuilderTest QemuCommandBuilderTest.cpp)
+target_link_libraries(QemuCommandBuilderTest PRIVATE QemuInfrastructure)
+add_test(NAME QemuCommandBuilderTest COMMAND QemuCommandBuilderTest)
+
+add_executable(QemuLocatorTest QemuLocatorTest.cpp)
+target_link_libraries(QemuLocatorTest PRIVATE QemuInfrastructure)
+add_test(NAME QemuLocatorTest COMMAND QemuLocatorTest)
+
+add_executable(QemuProcessTest QemuProcessTest.cpp)
+target_link_libraries(QemuProcessTest PRIVATE QemuInfrastructure)
+add_test(NAME QemuProcessTest COMMAND QemuProcessTest)
+
+add_executable(QemuQuotingTest QemuQuotingTest.cpp)
+target_link_libraries(QemuQuotingTest PRIVATE QemuInfrastructure)
+add_test(NAME QemuQuotingTest COMMAND QemuQuotingTest)
