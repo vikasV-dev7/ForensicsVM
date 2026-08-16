@@ -56,6 +56,7 @@ struct WindowsQemuProcess::Impl {
     HANDLE hProcess = nullptr;
     HANDLE hThread = nullptr;
     HANDLE hJob = nullptr;
+    HANDLE hNul = nullptr;
     DWORD processId = 0;
 
     ~Impl() {
@@ -74,6 +75,10 @@ struct WindowsQemuProcess::Impl {
         if (hJob) {
             CloseHandle(hJob);
             hJob = nullptr;
+        }
+        if (hNul) {
+            CloseHandle(hNul);
+            hNul = nullptr;
         }
     }
 };
@@ -107,9 +112,24 @@ std::expected<void, QemuProcess::Error> WindowsQemuProcess::start(const QemuLaun
 
     std::string commandLine = buildWindowsCommandLine(spec.executablePath, spec.arguments);
 
+    SECURITY_ATTRIBUTES sa;
+    ZeroMemory(&sa, sizeof(sa));
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+
+    impl_->hNul = CreateFileA("NUL", GENERIC_READ | GENERIC_WRITE, 
+                              FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, 
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+
     STARTUPINFOA si;
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
+    if (impl_->hNul != INVALID_HANDLE_VALUE && impl_->hNul != nullptr) {
+        si.dwFlags |= STARTF_USESTDHANDLES;
+        si.hStdInput = impl_->hNul;
+        si.hStdOutput = impl_->hNul;
+        si.hStdError = impl_->hNul;
+    }
 
     PROCESS_INFORMATION pi;
     ZeroMemory(&pi, sizeof(pi));
@@ -123,7 +143,7 @@ std::expected<void, QemuProcess::Error> WindowsQemuProcess::start(const QemuLaun
             cmdBuffer.data(),
             nullptr,
             nullptr,
-            FALSE,
+            TRUE, // bInheritHandles must be TRUE for STARTF_USESTDHANDLES
             CREATE_NO_WINDOW | CREATE_SUSPENDED,
             nullptr,
             nullptr,
@@ -138,12 +158,14 @@ std::expected<void, QemuProcess::Error> WindowsQemuProcess::start(const QemuLaun
     impl_->processId = pi.dwProcessId;
 
     if (!AssignProcessToJobObject(impl_->hJob, impl_->hProcess)) {
-        TerminateProcess(impl_->hProcess, 1);
-        impl_->closeHandles();
+        terminate(true);
         return std::unexpected(Error::LaunchFailed);
     }
 
-    ResumeThread(impl_->hThread);
+    if (ResumeThread(impl_->hThread) == (DWORD)-1) {
+        terminate(true);
+        return std::unexpected(Error::LaunchFailed);
+    }
 
     return {};
 }

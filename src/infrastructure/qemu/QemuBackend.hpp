@@ -3,6 +3,7 @@
 #include "QemuLocator.hpp"
 #include "QemuCommandBuilder.hpp"
 #include "QemuProcess.hpp"
+#include "QmpClient.hpp"
 #include <unordered_map>
 #include <memory>
 
@@ -32,6 +33,7 @@ private:
     std::unordered_map<domain::VmId, domain::VmConfig> configCache_;
     
     std::unordered_map<domain::VmId, std::unique_ptr<QemuProcess>> processes_;
+    std::unordered_map<domain::VmId, std::unique_ptr<QmpClient>> qmpClients_;
 };
 
 } // namespace fvm::infrastructure::qemu

@@ -32,3 +32,7 @@ add_test(NAME QemuProcessTest COMMAND QemuProcessTest)
 add_executable(QemuQuotingTest QemuQuotingTest.cpp)
 target_link_libraries(QemuQuotingTest PRIVATE QemuInfrastructure)
 add_test(NAME QemuQuotingTest COMMAND QemuQuotingTest)
+
+add_executable(QmpClientTest QmpClientTest.cpp)
+target_link_libraries(QmpClientTest PRIVATE QemuInfrastructure)
+add_test(NAME QmpClientTest COMMAND QmpClientTest)

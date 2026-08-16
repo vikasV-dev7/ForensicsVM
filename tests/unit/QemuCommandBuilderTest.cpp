@@ -18,7 +18,7 @@ int main() {
         {}, {}, FirmwareConfig{}, DisplayConfig{16, 0, false}
     };
 
-    auto spec = builder.build(config, "C:\\qemu\\qemu-system-x86_64.exe");
+    auto spec = builder.build(VmId("test-vm"), config, "C:\\qemu\\qemu-system-x86_64.exe");
 
     if (spec.executablePath != "C:\\qemu\\qemu-system-x86_64.exe") {
         std::cerr << "Fail: Executable path mismatch\n";

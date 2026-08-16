@@ -1,3 +1,7 @@
 add_executable(QemuIntegrationTest QemuIntegrationTest.cpp)
 target_link_libraries(QemuIntegrationTest PRIVATE QemuInfrastructure)
 add_test(NAME QemuIntegrationTest COMMAND QemuIntegrationTest)
+
+add_executable(QmpIntegrationTest QmpIntegrationTest.cpp)
+target_link_libraries(QmpIntegrationTest PRIVATE QemuInfrastructure)
+add_test(NAME QmpIntegrationTest COMMAND QmpIntegrationTest)

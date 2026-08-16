@@ -28,7 +28,7 @@ int main() {
     };
 
     DefaultQemuCommandBuilder builder;
-    auto spec = builder.build(config, exeRes.value());
+    auto spec = builder.build(config.id, config, exeRes.value());
 
     WindowsQemuProcess process;
     auto startRes = process.start(spec);

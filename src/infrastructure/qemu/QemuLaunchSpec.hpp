@@ -6,6 +6,7 @@ namespace fvm::infrastructure::qemu {
 
 struct QemuLaunchSpec {
     std::string executablePath;
+    std::string qmpPipeName;
     std::vector<std::string> arguments;
 };
 

@@ -2,9 +2,10 @@
 
 namespace fvm::infrastructure::qemu {
 
-QemuLaunchSpec DefaultQemuCommandBuilder::build(const domain::VmConfig& config, const std::string& executablePath) const {
+QemuLaunchSpec DefaultQemuCommandBuilder::build(const domain::VmId& id, const domain::VmConfig& config, const std::string& executablePath) const {
     QemuLaunchSpec spec;
     spec.executablePath = executablePath;
+    spec.qmpPipeName = "fvm-qmp-" + id.value();
     
     // Base configuration (safe defaults)
     spec.arguments = {
@@ -12,7 +13,9 @@ QemuLaunchSpec DefaultQemuCommandBuilder::build(const domain::VmConfig& config, 
         "-nodefaults",
         "-name", config.name,
         "-m", std::to_string(config.memory.assignedMemory.value()),
-        "-smp", std::to_string(config.cpu.vcpus.value())
+        "-smp", std::to_string(config.cpu.vcpus.value()),
+        "-chardev", "pipe,id=qmp0,path=" + spec.qmpPipeName,
+        "-mon", "chardev=qmp0,mode=control"
     };
     
     // Display configuration
