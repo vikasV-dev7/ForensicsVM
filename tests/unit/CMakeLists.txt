@@ -44,3 +44,7 @@ add_test(NAME QemuQuotingTest COMMAND QemuQuotingTest)
 add_executable(QmpClientTest QmpClientTest.cpp)
 target_link_libraries(QmpClientTest PRIVATE QemuInfrastructure)
 add_test(NAME QmpClientTest COMMAND QmpClientTest)
+
+add_executable(ExecutionSessionTest ExecutionSessionTest.cpp)
+target_link_libraries(ExecutionSessionTest PRIVATE VmDomain)
+add_test(NAME ExecutionSessionTest COMMAND ExecutionSessionTest)

@@ -7,7 +7,7 @@ enum class VmState {
     Starting,
     Running,
     Paused,
-    Stopping,
+    ShuttingDown,
     Stopped,
     Failed
 };

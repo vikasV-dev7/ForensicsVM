@@ -132,9 +132,9 @@ int main() {
     // Verify VM is running
     {
         auto state = backend.queryState(id);
-        if (!state || *state != VmState::Running) {
-            std::cerr << "Fail: VM should be running\n";
-            failed++;
+        if (!state || state->state != VmState::Running) {
+            std::cerr << "Fail: Expected running state for overlay test\n";
+            exit(1);
         }
     }
 

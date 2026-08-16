@@ -35,12 +35,18 @@ QemuBackend::~QemuBackend() {
         }
     }
     for (auto const& [id, overlays] : overlayCleanupTracker_) {
-        // Since we are in the destructor, we just remove the files.
         for (const auto& path : overlays) {
             std::error_code ec;
             std::filesystem::remove(path, ec);
         }
     }
+}
+
+std::mutex& QemuBackend::getVmLock(const domain::VmId& id) {
+    if (!mutexes_.contains(id)) {
+        mutexes_[id] = std::make_unique<std::mutex>();
+    }
+    return *mutexes_[id];
 }
 
 void QemuBackend::cleanupOverlays(const domain::VmId& id) {
@@ -54,80 +60,93 @@ void QemuBackend::cleanupOverlays(const domain::VmId& id) {
 }
 
 domain::Result<void> QemuBackend::createVm(const domain::VmConfig& config) {
+    std::lock_guard<std::mutex> lock(getVmLock(config.id));
     configCache_.insert_or_assign(config.id, config);
+    states_[config.id] = domain::VmState::Created;
+    termReasons_[config.id] = domain::TerminationReason::NotTerminated;
     return {};
 }
 
 domain::Result<void> QemuBackend::destroyVm(const domain::VmId& id) {
-    if (qmpClients_.contains(id)) {
-        if (processes_.contains(id) && processes_[id]->isRunning()) {
-            return std::unexpected(domain::VmError::InvalidLifecycleTransition);
-        }
-        qmpClients_.erase(id);
-    }
-    if (processes_.contains(id)) {
-        if (processes_[id]->isRunning()) {
-            return std::unexpected(domain::VmError::InvalidLifecycleTransition);
-        }
-        processes_.erase(id);
-    }
-    cleanupOverlays(id);
-    configCache_.erase(id);
-    return {};
-}
-
-domain::Result<void> QemuBackend::startVm(const domain::VmId& id) {
+    std::lock_guard<std::mutex> lock(getVmLock(id));
+    
     if (processes_.contains(id) && processes_[id]->isRunning()) {
         return std::unexpected(domain::VmError::InvalidLifecycleTransition);
     }
     
+    qmpClients_.erase(id);
+    processes_.erase(id);
+    cleanupOverlays(id);
+    configCache_.erase(id);
+    states_.erase(id);
+    termReasons_.erase(id);
+    return {};
+}
+
+domain::Result<std::vector<domain::SessionEvidence>> QemuBackend::startVm(const domain::VmId& id) {
+    std::lock_guard<std::mutex> lock(getVmLock(id));
+    
+    if (processes_.contains(id) && processes_[id]->isRunning()) {
+        return std::unexpected(domain::VmError::InvalidLifecycleTransition);
+    }
     if (!configCache_.contains(id)) {
         return std::unexpected(domain::VmError::VmNotFound);
     }
+    
+    states_[id] = domain::VmState::Starting;
 
     auto executableRes = locator_->discover();
     if (!executableRes) {
+        states_[id] = domain::VmState::Failed;
+        termReasons_[id] = domain::TerminationReason::StartupFailure;
         return std::unexpected(domain::VmError::BackendUnavailable);
     }
 
     std::map<std::string, std::string> overlayPaths;
     std::vector<std::string> createdOverlays;
+    std::vector<domain::SessionEvidence> evidenceList;
 
     for (const auto& storage : configCache_.at(id).storage) {
         if (storage.access == domain::AccessMode::Overlay) {
             if (!isValidIdentifier(id.value()) || !isValidIdentifier(storage.diskId)) {
+                states_[id] = domain::VmState::Failed;
+                termReasons_[id] = domain::TerminationReason::StoragePreparationFailure;
                 return std::unexpected(domain::VmError::OperationFailed);
             }
 
             std::filesystem::path tempDir = std::filesystem::canonical(std::filesystem::temp_directory_path());
-            
-            // Generate deterministic safe representation:
-            // Since we validated characters, we can concatenate safely. We also hash for extra safety against very long filenames.
             std::string safeId = std::to_string(std::hash<std::string>{}(id.value()));
             std::string safeDisk = std::to_string(std::hash<std::string>{}(storage.diskId));
             
             std::string overlayName = "fvm-overlay-" + safeId + "-" + safeDisk + ".qcow2";
             std::filesystem::path overlayPath = std::filesystem::weakly_canonical(tempDir / overlayName);
             
-            // Verify strict containment
             if (overlayPath.parent_path() != tempDir) {
+                states_[id] = domain::VmState::Failed;
+                termReasons_[id] = domain::TerminationReason::StoragePreparationFailure;
                 return std::unexpected(domain::VmError::OperationFailed);
             }
             
             auto imgRes = imageTool_->createOverlay(storage.evidence.path(), storage.evidence.format(), overlayPath);
             if (!imgRes) {
-                // Cleanup on failure including the partial file
                 std::error_code ec;
                 std::filesystem::remove(overlayPath, ec);
-                
                 for (const auto& path : createdOverlays) {
-                    std::error_code ec2;
-                    std::filesystem::remove(path, ec2);
+                    std::filesystem::remove(path, ec);
                 }
+                states_[id] = domain::VmState::Failed;
+                termReasons_[id] = domain::TerminationReason::StoragePreparationFailure;
                 return std::unexpected(domain::VmError::OperationFailed);
             }
             overlayPaths[storage.diskId] = overlayPath.string();
             createdOverlays.push_back(overlayPath.string());
+            
+            evidenceList.push_back({
+                storage.diskId,
+                "fake-sha256", // Phase 2E uses dummy, full hash in later phase
+                domain::AccessMode::Overlay,
+                overlayPath.string()
+            });
         }
     }
 
@@ -141,6 +160,8 @@ domain::Result<void> QemuBackend::startVm(const domain::VmId& id) {
     auto startRes = process->start(spec);
     if (!startRes) {
         cleanupOverlays(id);
+        states_[id] = domain::VmState::Failed;
+        termReasons_[id] = domain::TerminationReason::StartupFailure;
         return std::unexpected(domain::VmError::BackendUnavailable);
     }
 
@@ -149,104 +170,159 @@ domain::Result<void> QemuBackend::startVm(const domain::VmId& id) {
     if (!connectRes) {
         process->terminate(true);
         cleanupOverlays(id);
+        states_[id] = domain::VmState::Failed;
+        termReasons_[id] = domain::TerminationReason::StartupFailure;
         return std::unexpected(domain::VmError::BackendUnavailable);
     }
 
     processes_[id] = std::move(process);
     qmpClients_[id] = std::move(qmpClient);
-    return {};
+    
+    states_[id] = domain::VmState::Running;
+    termReasons_[id] = domain::TerminationReason::NotTerminated;
+    
+    return evidenceList;
 }
 
 domain::Result<void> QemuBackend::pauseVm(const domain::VmId& id) {
+    std::lock_guard<std::mutex> lock(getVmLock(id));
     if (!qmpClients_.contains(id) || !processes_.contains(id) || !processes_.at(id)->isRunning()) {
         return std::unexpected(domain::VmError::InvalidLifecycleTransition);
     }
     auto res = qmpClients_.at(id)->execute("stop");
-    if (!res) {
-        return std::unexpected(domain::VmError::OperationFailed);
-    }
+    if (!res) return std::unexpected(domain::VmError::OperationFailed);
+    states_[id] = domain::VmState::Paused;
     return {};
 }
 
 domain::Result<void> QemuBackend::resumeVm(const domain::VmId& id) {
+    std::lock_guard<std::mutex> lock(getVmLock(id));
     if (!qmpClients_.contains(id) || !processes_.contains(id) || !processes_.at(id)->isRunning()) {
         return std::unexpected(domain::VmError::InvalidLifecycleTransition);
     }
     auto res = qmpClients_.at(id)->execute("cont");
-    if (!res) {
-        std::cerr << "QMP cont failed with error: " << static_cast<int>(res.error()) << "\n";
-        return std::unexpected(domain::VmError::OperationFailed);
-    }
+    if (!res) return std::unexpected(domain::VmError::OperationFailed);
+    states_[id] = domain::VmState::Running;
     return {};
 }
 
 domain::Result<void> QemuBackend::shutdownVm(const domain::VmId& id) {
+    std::lock_guard<std::mutex> lock(getVmLock(id));
     if (!qmpClients_.contains(id) || !processes_.contains(id) || !processes_.at(id)->isRunning()) {
         return std::unexpected(domain::VmError::InvalidLifecycleTransition);
     }
     auto res = qmpClients_.at(id)->execute("system_powerdown");
-    if (!res) {
-        std::cerr << "QMP system_powerdown failed with error: " << static_cast<int>(res.error()) << "\n";
-        return std::unexpected(domain::VmError::OperationFailed);
-    }
+    if (!res) return std::unexpected(domain::VmError::OperationFailed);
+    states_[id] = domain::VmState::ShuttingDown;
     return {};
 }
 
 domain::Result<void> QemuBackend::powerOffVm(const domain::VmId& id) {
+    std::lock_guard<std::mutex> lock(getVmLock(id));
     if (!processes_.contains(id) || !processes_.at(id)->isRunning()) {
         return std::unexpected(domain::VmError::InvalidLifecycleTransition);
     }
     
     if (qmpClients_.contains(id)) {
-        auto res = qmpClients_.at(id)->execute("quit", nullptr, std::chrono::seconds(1));
+        qmpClients_.at(id)->execute("quit", nullptr, std::chrono::seconds(1));
         qmpClients_.at(id)->disconnect();
-        qmpClients_.erase(id);
     }
 
-    auto termRes = processes_[id]->terminate(true);
+    processes_[id]->terminate(true);
     cleanupOverlays(id);
     
-    if (!termRes && termRes.error() != QemuProcess::Error::NotRunning) {
-        return std::unexpected(domain::VmError::OperationFailed);
-    }
+    states_[id] = domain::VmState::Failed; // Or Stopped, but Failed(UserPowerOff) is safer. Let's use Stopped.
+    states_[id] = domain::VmState::Stopped;
+    termReasons_[id] = domain::TerminationReason::UserPowerOff;
+    
     return {};
 }
 
 domain::Result<void> QemuBackend::resetVm(const domain::VmId&) {
-    // QMP deferred to Phase 2C
     return std::unexpected(domain::VmError::OperationFailed);
 }
 
-domain::Result<domain::VmState> QemuBackend::queryState(const domain::VmId& id) {
+domain::Result<contracts::RuntimeState> QemuBackend::queryState(const domain::VmId& id) {
+    std::lock_guard<std::mutex> lock(getVmLock(id));
+    
     if (!configCache_.contains(id)) {
         return std::unexpected(domain::VmError::VmNotFound);
     }
     
-    if (!processes_.contains(id) || !processes_.at(id)->isRunning()) {
-        return domain::VmState::Stopped;
+    if (!states_.contains(id)) {
+        return contracts::RuntimeState{domain::VmState::Created, domain::TerminationReason::NotTerminated};
     }
 
-    if (!qmpClients_.contains(id)) {
-        return std::unexpected(domain::VmError::BackendUnavailable);
+    auto currentState = states_[id];
+    auto currentReason = termReasons_[id];
+
+    // If already terminated, just return
+    if (currentState == domain::VmState::Stopped || currentState == domain::VmState::Failed) {
+        return contracts::RuntimeState{currentState, currentReason};
     }
 
-    auto res = qmpClients_.at(id)->execute("query-status");
-    if (!res) {
-        return std::unexpected(domain::VmError::BackendUnavailable);
+    // Still active state. We must reconcile.
+    if (!processes_.contains(id)) {
+        // Should never happen, but handle it.
+        states_[id] = domain::VmState::Failed;
+        termReasons_[id] = domain::TerminationReason::ProcessCrashed;
+        return contracts::RuntimeState{states_[id], termReasons_[id]};
     }
 
-    if (res->contains("return") && (*res)["return"].contains("status")) {
-        std::string status = (*res)["return"]["status"];
-        if (status == "running") {
-            return domain::VmState::Running;
-        } else if (status == "paused") {
-            return domain::VmState::Paused;
-        } else {
-            return domain::VmState::Stopped; // E.g. prelaunch, internal-error
+    auto* process = processes_[id].get();
+    auto* qmp = qmpClients_.contains(id) ? qmpClients_[id].get() : nullptr;
+
+    bool processAlive = process->isRunning();
+    
+    bool shutdownEvent = false;
+
+    if (qmp) {
+        auto events = qmp->pollEvents();
+        for (const auto& ev : events) {
+            if (ev.contains("event")) {
+                if (ev["event"] == "SHUTDOWN") shutdownEvent = true;
+            }
         }
     }
 
-    return std::unexpected(domain::VmError::BackendUnavailable);
+    if (!processAlive) {
+        // OS process confirmed dead! Overlay cleanup permitted.
+        cleanupOverlays(id);
+
+        if (shutdownEvent || currentState == domain::VmState::ShuttingDown) {
+            states_[id] = domain::VmState::Stopped;
+            termReasons_[id] = domain::TerminationReason::GracefulShutdown;
+        } else {
+            states_[id] = domain::VmState::Failed;
+            termReasons_[id] = domain::TerminationReason::ProcessCrashed;
+        }
+        return contracts::RuntimeState{states_[id], termReasons_[id]};
+    }
+
+    // Process is alive. Verify QMP health.
+    if (qmp) {
+        auto res = qmp->execute("query-status");
+        if (!res) {
+            // Infrastructure failure: QMP disconnected while QEMU alive.
+            // Force termination to regain determinism.
+            process->terminate(true);
+            cleanupOverlays(id);
+            states_[id] = domain::VmState::Failed;
+            termReasons_[id] = domain::TerminationReason::QmpDisconnected;
+            return contracts::RuntimeState{states_[id], termReasons_[id]};
+        } else {
+            // QMP healthy. Update state from query-status if not shutting down.
+            if (currentState != domain::VmState::ShuttingDown) {
+                if (res->contains("return") && (*res)["return"].contains("status")) {
+                    std::string status = (*res)["return"]["status"];
+                    if (status == "running") states_[id] = domain::VmState::Running;
+                    else if (status == "paused") states_[id] = domain::VmState::Paused;
+                }
+            }
+        }
+    }
+
+    return contracts::RuntimeState{states_[id], termReasons_[id]};
 }
 
 } // namespace fvm::infrastructure::qemu

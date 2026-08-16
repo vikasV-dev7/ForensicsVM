@@ -16,3 +16,7 @@ add_test(NAME ForensicImmutabilityIntegrationTest COMMAND ForensicImmutabilityIn
 add_executable(QemuBackendIntegrationTest QemuBackendIntegrationTest.cpp)
 target_link_libraries(QemuBackendIntegrationTest PRIVATE QemuInfrastructure)
 add_test(NAME QemuBackendIntegrationTest COMMAND QemuBackendIntegrationTest)
+
+add_executable(LifecycleIntegrationTest LifecycleIntegrationTest.cpp)
+target_link_libraries(LifecycleIntegrationTest PRIVATE QemuInfrastructure VmDomain)
+add_test(NAME LifecycleIntegrationTest COMMAND LifecycleIntegrationTest)

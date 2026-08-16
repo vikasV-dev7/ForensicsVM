@@ -57,7 +57,8 @@ int main() {
         }
         if (!expectSuccess && res) {
             std::cerr << "Fail: Expected failure for '" << vmIdVal << "' / '" << diskIdVal << "'\n";
-            if (backend.queryState(id) == VmState::Running) {
+            auto stateRes = backend.queryState(id);
+            if (stateRes && stateRes->state == VmState::Running) {
                 backend.powerOffVm(id);
             }
             backend.destroyVm(id);
@@ -65,7 +66,8 @@ int main() {
         }
         
         if (expectSuccess) {
-            if (backend.queryState(id) == VmState::Running) {
+            auto stateRes = backend.queryState(id);
+            if (stateRes && stateRes->state == VmState::Running) {
                 backend.powerOffVm(id);
             }
             backend.destroyVm(id);

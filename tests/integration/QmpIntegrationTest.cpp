@@ -41,9 +41,9 @@ int main() {
     }
 
     auto state = backend.queryState(id);
-    if (!state || *state != VmState::Running) {
-        std::cerr << "Fail: VM should be running\n";
-        failed++;
+    if (!state || state->state != VmState::Running) {
+        std::cerr << "Fail: Expected running state\n";
+        exit(1);
     }
 
     if (!backend.pauseVm(id)) {
@@ -58,9 +58,9 @@ int main() {
     }
 
     state = backend.queryState(id);
-    if (!state || *state != VmState::Running) {
-        std::cerr << "Fail: VM should be running again\n";
-        failed++;
+    if (!state || state->state != VmState::Running) {
+        std::cerr << "Fail: Expected running state after resume\n";
+        exit(1);
     }
 
     // Try graceful shutdown (which doesn't do anything because no OS, but shouldn't error QMP)
@@ -77,9 +77,9 @@ int main() {
     }
 
     state = backend.queryState(id);
-    if (!state || *state != VmState::Stopped) {
-        std::cerr << "Fail: VM should be stopped\n";
-        failed++;
+    if (!state || state->state != VmState::Stopped) {
+        std::cerr << "Fail: Expected stopped state after poweroff\n";
+        exit(1);
     }
 
     if (!backend.destroyVm(id)) {
