@@ -6,6 +6,7 @@
 #include "vm/domain/VmState.hpp"
 #include "vm/domain/VmError.hpp"
 #include "vm/domain/ExecutionSession.hpp"
+#include "vm/management/EvidenceRegistry.hpp"
 #include <memory>
 #include <vector>
 #include <unordered_map>
@@ -15,13 +16,15 @@ namespace fvm::management {
 class VmManager {
     std::unique_ptr<contracts::IVmRepository> repository_;
     std::unique_ptr<contracts::IVirtualizationBackend> backend_;
+    std::shared_ptr<EvidenceRegistry> registry_;
     
     // In-memory session tracking for Phase 2E
     std::unordered_map<domain::VmId, domain::ExecutionSession> sessions_;
 
 public:
     VmManager(std::unique_ptr<contracts::IVmRepository> repository,
-              std::unique_ptr<contracts::IVirtualizationBackend> backend);
+              std::unique_ptr<contracts::IVirtualizationBackend> backend,
+              std::shared_ptr<EvidenceRegistry> registry);
 
     domain::Result<domain::VmId> createVm(const domain::VmConfig& config);
     domain::Result<void> removeVm(const domain::VmId& id);

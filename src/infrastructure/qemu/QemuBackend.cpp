@@ -83,7 +83,7 @@ domain::Result<void> QemuBackend::destroyVm(const domain::VmId& id) {
     return {};
 }
 
-domain::Result<std::vector<domain::SessionEvidence>> QemuBackend::startVm(const domain::VmId& id) {
+domain::Result<std::vector<domain::SessionEvidence>> QemuBackend::startVm(const domain::VmId& id, const std::vector<domain::EvidenceRecord>& resolvedEvidence) {
     std::lock_guard<std::mutex> lock(getVmLock(id));
     
     if (processes_.contains(id) && processes_[id]->isRunning()) {
@@ -114,6 +114,20 @@ domain::Result<std::vector<domain::SessionEvidence>> QemuBackend::startVm(const 
                 return std::unexpected(domain::VmError::OperationFailed);
             }
 
+            // Find matching EvidenceRecord
+            std::optional<domain::EvidenceRecord> matchingRecord;
+            for (const auto& record : resolvedEvidence) {
+                if (record.id() == storage.evidenceId) {
+                    matchingRecord = record;
+                    break;
+                }
+            }
+            if (!matchingRecord) {
+                states_[id] = domain::VmState::Failed;
+                termReasons_[id] = domain::TerminationReason::StoragePreparationFailure;
+                return std::unexpected(domain::VmError::OperationFailed);
+            }
+
             std::filesystem::path tempDir = std::filesystem::canonical(std::filesystem::temp_directory_path());
             std::string safeId = std::to_string(std::hash<std::string>{}(id.value()));
             std::string safeDisk = std::to_string(std::hash<std::string>{}(storage.diskId));
@@ -127,7 +141,7 @@ domain::Result<std::vector<domain::SessionEvidence>> QemuBackend::startVm(const 
                 return std::unexpected(domain::VmError::OperationFailed);
             }
             
-            auto imgRes = imageTool_->createOverlay(storage.evidence.path(), storage.evidence.format(), overlayPath);
+            auto imgRes = imageTool_->createOverlay(matchingRecord->path(), matchingRecord->format(), overlayPath);
             if (!imgRes) {
                 std::error_code ec;
                 std::filesystem::remove(overlayPath, ec);
@@ -143,7 +157,7 @@ domain::Result<std::vector<domain::SessionEvidence>> QemuBackend::startVm(const 
             
             evidenceList.push_back({
                 storage.diskId,
-                "fake-sha256", // Phase 2E uses dummy, full hash in later phase
+                matchingRecord->sha256(),
                 domain::AccessMode::Overlay,
                 overlayPath.string()
             });

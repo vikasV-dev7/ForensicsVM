@@ -9,7 +9,8 @@ enum class VmError {
     DuplicateVm,
     InvalidLifecycleTransition,
     BackendUnavailable,
-    OperationFailed
+    OperationFailed,
+    EvidenceIntegrityFailure
 };
 
 template <typename T>

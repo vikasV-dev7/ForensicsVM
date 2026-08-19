@@ -39,7 +39,7 @@ int main() {
             {
                 StorageAttachment{
                     diskIdVal,
-                    EvidenceSource("dummy.raw", DiskFormat::Raw),
+                    EvidenceId("dummy-ev-id"),
                     AccessMode::Overlay,
                     BusType::VirtIO,
                     false
@@ -49,7 +49,12 @@ int main() {
         };
 
         backend.createVm(config);
-        auto res = backend.startVm(id);
+        
+        std::vector<EvidenceRecord> resolvedEvidence;
+        resolvedEvidence.push_back(EvidenceRecord(EvidenceId("dummy-ev-id"), "dummy.raw", DiskFormat::Raw, 1024));
+        resolvedEvidence[0].setVerified("deadbeef");
+
+        auto res = backend.startVm(id, resolvedEvidence);
         
         if (expectSuccess && !res) {
             std::cerr << "Fail: Expected success for '" << vmIdVal << "' / '" << diskIdVal << "'\n";

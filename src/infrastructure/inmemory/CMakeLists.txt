@@ -1,3 +1,3 @@
-add_library(InMemoryInfrastructure InMemoryRepository.cpp InMemoryBackend.cpp)
+add_library(InMemoryInfrastructure InMemoryRepository.cpp InMemoryBackend.cpp InMemoryEvidenceRepository.cpp)
 target_include_directories(InMemoryInfrastructure PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(InMemoryInfrastructure PUBLIC VmDomain VmManagement)

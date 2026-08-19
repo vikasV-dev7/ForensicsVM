@@ -1,5 +1,5 @@
 #pragma once
-#include "EvidenceSource.hpp"
+#include "EvidenceId.hpp"
 #include <string>
 
 namespace fvm::domain {
@@ -18,13 +18,13 @@ enum class BusType {
 
 struct StorageAttachment {
     std::string diskId;
-    EvidenceSource evidence;
+    EvidenceId evidenceId;
     AccessMode access;
     BusType bus;
     bool bootable;
 
     bool isValid() const noexcept {
-        return !diskId.empty() && evidence.isValid();
+        return !diskId.empty() && !evidenceId.empty();
     }
 };
 

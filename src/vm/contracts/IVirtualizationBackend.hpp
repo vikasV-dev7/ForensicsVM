@@ -22,7 +22,7 @@ public:
     virtual domain::Result<void> destroyVm(const domain::VmId& id) = 0;
     
     // startVm now returns the generated SessionEvidence records so the manager can track provenance.
-    virtual domain::Result<std::vector<domain::SessionEvidence>> startVm(const domain::VmId& id) = 0;
+    virtual domain::Result<std::vector<domain::SessionEvidence>> startVm(const domain::VmId& id, const std::vector<domain::EvidenceRecord>& resolvedEvidence) = 0;
     
     virtual domain::Result<void> pauseVm(const domain::VmId& id) = 0;
     virtual domain::Result<void> resumeVm(const domain::VmId& id) = 0;

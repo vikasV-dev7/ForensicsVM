@@ -91,7 +91,7 @@ int main() {
         {
             StorageAttachment{
                 "disk1",
-                EvidenceSource(dummyEvidence.string(), DiskFormat::Raw),
+                EvidenceId("dummy-ev-id"),
                 AccessMode::Overlay,
                 BusType::VirtIO,
                 false
@@ -106,10 +106,15 @@ int main() {
         goto cleanup;
     }
 
-    if (!backend.startVm(id)) {
-        std::cerr << "Fail: startVm\n";
-        failed++;
-        goto cleanup;
+    {
+        std::vector<EvidenceRecord> resolvedEvidence;
+        resolvedEvidence.push_back(EvidenceRecord(EvidenceId("dummy-ev-id"), dummyEvidence, DiskFormat::Raw, 1024 * 1024));
+        resolvedEvidence[0].setVerified(hashBefore);
+        if (!backend.startVm(id, resolvedEvidence)) {
+            std::cerr << "Fail: startVm\n";
+            failed++;
+            goto cleanup;
+        }
     }
 
     // Wait briefly and verify the overlay was created

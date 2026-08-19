@@ -14,8 +14,9 @@ std::string generateSessionId(const std::string& vmId) {
 } // namespace
 
 VmManager::VmManager(std::unique_ptr<contracts::IVmRepository> repository,
-                     std::unique_ptr<contracts::IVirtualizationBackend> backend)
-    : repository_(std::move(repository)), backend_(std::move(backend)) {}
+                     std::unique_ptr<contracts::IVirtualizationBackend> backend,
+                     std::shared_ptr<EvidenceRegistry> registry)
+    : repository_(std::move(repository)), backend_(std::move(backend)), registry_(std::move(registry)) {}
 
 domain::Result<domain::VmId> VmManager::createVm(const domain::VmConfig& config) {
     if (!config.isValid()) {
@@ -89,7 +90,19 @@ domain::Result<std::string> VmManager::start(const domain::VmId& id) {
     auto configRes = repository_->findConfig(id);
     if (!configRes) return std::unexpected(domain::VmError::VmNotFound);
 
-    auto startRes = backend_->startVm(id);
+    std::vector<domain::EvidenceRecord> resolvedEvidence;
+    for (const auto& storage : configRes->storage) {
+        if (!storage.evidenceId.empty()) {
+            auto recordOpt = registry_->getEvidence(storage.evidenceId);
+            if (!recordOpt) return std::unexpected(domain::VmError::EvidenceIntegrityFailure);
+            if (recordOpt->status() != domain::EvidenceStatus::Verified) {
+                return std::unexpected(domain::VmError::EvidenceIntegrityFailure);
+            }
+            resolvedEvidence.push_back(*recordOpt);
+        }
+    }
+
+    auto startRes = backend_->startVm(id, resolvedEvidence);
     if (!startRes) return std::unexpected(startRes.error());
 
     domain::ExecutionSession session{

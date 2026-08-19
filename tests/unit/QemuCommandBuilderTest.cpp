@@ -48,14 +48,14 @@ int main() {
     VmConfig configWithStorage = config;
     configWithStorage.storage.push_back(StorageAttachment{
         "disk1",
-        EvidenceSource("C:\\ev1.raw", DiskFormat::Raw),
+        EvidenceId("ev1-id"),
         AccessMode::ReadOnly,
         BusType::VirtIO,
         true
     });
     configWithStorage.storage.push_back(StorageAttachment{
         "disk2",
-        EvidenceSource("C:\\ev2.qcow2", DiskFormat::Qcow2),
+        EvidenceId("ev2-id"),
         AccessMode::Overlay,
         BusType::VirtIO,
         false

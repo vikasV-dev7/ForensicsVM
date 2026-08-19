@@ -48,3 +48,15 @@ add_test(NAME QmpClientTest COMMAND QmpClientTest)
 add_executable(ExecutionSessionTest ExecutionSessionTest.cpp)
 target_link_libraries(ExecutionSessionTest PRIVATE VmDomain)
 add_test(NAME ExecutionSessionTest COMMAND ExecutionSessionTest)
+
+add_executable(EvidenceRecordTest EvidenceRecordTest.cpp)
+target_link_libraries(EvidenceRecordTest PRIVATE VmDomain)
+add_test(NAME EvidenceRecordTest COMMAND EvidenceRecordTest)
+
+add_executable(NativeHashCalculatorTest NativeHashCalculatorTest.cpp)
+target_link_libraries(NativeHashCalculatorTest PRIVATE fvm_crypto)
+add_test(NAME NativeHashCalculatorTest COMMAND NativeHashCalculatorTest)
+
+add_executable(EvidenceRegistryTest EvidenceRegistryTest.cpp)
+target_link_libraries(EvidenceRegistryTest PRIVATE VmManagement InMemoryInfrastructure)
+add_test(NAME EvidenceRegistryTest COMMAND EvidenceRegistryTest)

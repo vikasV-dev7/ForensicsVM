@@ -1,6 +1,8 @@
 #include "vm/management/VmManager.hpp"
 #include "infrastructure/inmemory/InMemoryRepository.hpp"
 #include "infrastructure/inmemory/InMemoryBackend.hpp"
+#include "infrastructure/inmemory/InMemoryEvidenceRepository.hpp"
+#include "vm/contracts/IHashCalculator.hpp"
 #include <iostream>
 #include <memory>
 #include <cassert>
@@ -9,13 +11,24 @@ using namespace fvm::domain;
 using namespace fvm::management;
 using namespace fvm::infrastructure::inmemory;
 
+class DummyHash : public fvm::contracts::IHashCalculator {
+public:
+    std::expected<std::string, fvm::contracts::HashError> calculateSha256(const std::filesystem::path&) override {
+        return "dummy-hash";
+    }
+};
+
 int main() {
     int failed = 0;
 
     auto repo = std::make_unique<InMemoryRepository>();
     auto backend = std::make_unique<InMemoryBackend>();
     
-    VmManager manager(std::move(repo), std::move(backend));
+    auto evRepo = std::make_unique<InMemoryEvidenceRepository>();
+    auto evHash = std::make_unique<DummyHash>();
+    auto registry = std::make_shared<EvidenceRegistry>(std::move(evRepo), std::move(evHash));
+    
+    VmManager manager(std::move(repo), std::move(backend), registry);
 
     VmConfig config{
         VmId("test-1"),

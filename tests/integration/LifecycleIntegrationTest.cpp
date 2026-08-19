@@ -38,7 +38,7 @@ void testLifecycleReconciliation() {
         std::vector<StorageAttachment>{
             StorageAttachment{
                 "disk0",
-                EvidenceSource(dummyEvidencePath.string(), DiskFormat::Raw),
+                EvidenceId("lifecycle-ev-id"),
                 AccessMode::Overlay,
                 BusType::VirtIO,
                 true
@@ -55,7 +55,11 @@ void testLifecycleReconciliation() {
         exit(1);
     }
 
-    auto startRes = backend.startVm(config.id);
+    std::vector<EvidenceRecord> resolvedEvidence;
+    resolvedEvidence.push_back(EvidenceRecord(EvidenceId("lifecycle-ev-id"), dummyEvidencePath, DiskFormat::Raw, 1024 * 1024));
+    resolvedEvidence[0].setVerified("deadbeef");
+
+    auto startRes = backend.startVm(config.id, resolvedEvidence);
     if (!startRes) {
         std::cerr << "Fail: startVm failed\n";
         exit(1);

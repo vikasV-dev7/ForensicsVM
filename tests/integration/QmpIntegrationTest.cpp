@@ -35,9 +35,10 @@ int main() {
         return 1;
     }
 
-    if (!backend.startVm(id)) {
+    std::vector<EvidenceRecord> resolvedEvidence; // Empty since no storage attachments
+    if (!backend.startVm(id, resolvedEvidence)) {
         std::cerr << "Fail: startVm\n";
-        return 1;
+        exit(1);
     }
 
     auto state = backend.queryState(id);

@@ -15,7 +15,7 @@ domain::Result<void> InMemoryBackend::destroyVm(const domain::VmId& id) {
     return {};
 }
 
-domain::Result<std::vector<domain::SessionEvidence>> InMemoryBackend::startVm(const domain::VmId& id) {
+domain::Result<std::vector<domain::SessionEvidence>> InMemoryBackend::startVm(const domain::VmId& id, const std::vector<domain::EvidenceRecord>& /*resolvedEvidence*/) {
     if (!states_.contains(id)) return std::unexpected(domain::VmError::VmNotFound);
     states_[id] = domain::VmState::Running;
     return std::vector<domain::SessionEvidence>{};

@@ -6,30 +6,11 @@ using namespace fvm::domain;
 int main() {
     int failed = 0;
 
-    // ValidEvidenceSource
-    {
-        EvidenceSource evidence("C:\\some\\evidence.raw", DiskFormat::Raw);
-        if (!evidence.isValid() || evidence.format() != DiskFormat::Raw || evidence.path().string() != "C:\\some\\evidence.raw") {
-            std::cerr << "Fail: ValidEvidenceSource\n";
-            failed++;
-        }
-    }
-
-    // InvalidEvidenceSource
-    {
-        EvidenceSource evidence("", DiskFormat::Raw);
-        if (evidence.isValid()) {
-            std::cerr << "Fail: InvalidEvidenceSource\n";
-            failed++;
-        }
-    }
-
     // ValidStorageAttachment
     {
-        EvidenceSource evidence("C:\\some\\evidence.qcow2", DiskFormat::Qcow2);
         StorageAttachment attachment{
             "disk0",
-            evidence,
+            EvidenceId("valid-id"),
             AccessMode::Overlay,
             BusType::VirtIO,
             true
@@ -42,16 +23,30 @@ int main() {
 
     // InvalidStorageAttachment_EmptyDiskId
     {
-        EvidenceSource evidence("C:\\some\\evidence.vhdx", DiskFormat::Vhdx);
         StorageAttachment attachment{
             "",
-            evidence,
+            EvidenceId("valid-id"),
             AccessMode::ReadOnly,
             BusType::SATA,
             false
         };
         if (attachment.isValid()) {
             std::cerr << "Fail: InvalidStorageAttachment_EmptyDiskId\n";
+            failed++;
+        }
+    }
+
+    // InvalidStorageAttachment_EmptyEvidenceId
+    {
+        StorageAttachment attachment{
+            "disk1",
+            EvidenceId(""),
+            AccessMode::ReadOnly,
+            BusType::SATA,
+            false
+        };
+        if (attachment.isValid()) {
+            std::cerr << "Fail: InvalidStorageAttachment_EmptyEvidenceId\n";
             failed++;
         }
     }

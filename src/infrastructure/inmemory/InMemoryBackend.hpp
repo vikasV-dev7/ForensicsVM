@@ -11,7 +11,7 @@ class InMemoryBackend : public fvm::contracts::IVirtualizationBackend {
 public:
     domain::Result<void> createVm(const domain::VmConfig& config) override;
     domain::Result<void> destroyVm(const domain::VmId& id) override;
-    domain::Result<std::vector<domain::SessionEvidence>> startVm(const domain::VmId& id) override;
+    domain::Result<std::vector<domain::SessionEvidence>> startVm(const domain::VmId& id, const std::vector<domain::EvidenceRecord>& resolvedEvidence) override;
     domain::Result<void> pauseVm(const domain::VmId& id) override;
     domain::Result<void> resumeVm(const domain::VmId& id) override;
     domain::Result<void> shutdownVm(const domain::VmId& id) override;
