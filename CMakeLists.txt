@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 project(ForensicVM
     VERSION 0.1.0
     DESCRIPTION "Forensic Virtual Machine Platform"
-    LANGUAGES CXX
+    LANGUAGES CXX C
 )
 
 set(CMAKE_CXX_STANDARD 23)

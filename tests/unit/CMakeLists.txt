@@ -60,3 +60,7 @@ add_test(NAME NativeHashCalculatorTest COMMAND NativeHashCalculatorTest)
 add_executable(EvidenceRegistryTest EvidenceRegistryTest.cpp)
 target_link_libraries(EvidenceRegistryTest PRIVATE VmManagement InMemoryInfrastructure gtest gtest_main)
 add_test(NAME EvidenceRegistryTest COMMAND EvidenceRegistryTest)
+
+add_executable(ApplicationOperationTest ApplicationOperationTest.cpp)
+target_link_libraries(ApplicationOperationTest PRIVATE CoreApplication gtest gtest_main)
+add_test(NAME ApplicationOperationTest COMMAND ApplicationOperationTest)

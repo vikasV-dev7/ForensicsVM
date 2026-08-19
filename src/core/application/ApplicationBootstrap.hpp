@@ -1,13 +1,14 @@
 #pragma once
 #include "vm/management/VmManager.hpp"
+#include "core/application/contracts/IForensicApplication.hpp"
 #include <memory>
 
 namespace fvm::core::application {
 
 class ApplicationBootstrap {
 public:
-    // Assembles the concrete infrastructure and injects it into the VmManager
     static std::unique_ptr<fvm::management::VmManager> createVmManager();
+    static std::unique_ptr<fvm::core::application::contracts::IForensicApplication> createApplication();
 };
 
 } // namespace fvm::core::application
