@@ -3,8 +3,12 @@ target_link_libraries(QemuIntegrationTest PRIVATE QemuInfrastructure)
 add_test(NAME QemuIntegrationTest COMMAND QemuIntegrationTest)
 
 add_executable(QmpIntegrationTest QmpIntegrationTest.cpp)
-target_link_libraries(QmpIntegrationTest PRIVATE QemuInfrastructure)
+target_link_libraries(QmpIntegrationTest PRIVATE QemuInfrastructure VmDomain VmManagement)
 add_test(NAME QmpIntegrationTest COMMAND QmpIntegrationTest)
+
+add_executable(MemoryAcquisitionIntegrationTest MemoryAcquisitionIntegrationTest.cpp)
+target_link_libraries(MemoryAcquisitionIntegrationTest PRIVATE QemuInfrastructure InMemoryInfrastructure fvm_crypto VmManagement)
+add_test(NAME MemoryAcquisitionIntegrationTest COMMAND MemoryAcquisitionIntegrationTest)
 
 add_executable(QemuImageToolIntegrationTest QemuImageToolIntegrationTest.cpp)
 target_link_libraries(QemuImageToolIntegrationTest PRIVATE QemuInfrastructure)

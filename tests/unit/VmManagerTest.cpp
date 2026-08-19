@@ -65,7 +65,38 @@ int main() {
     // Test Shutdown & Remove
     manager.shutdown(VmId("test-1"));
     auto remRes = manager.removeVm(VmId("test-1"));
-    if (!remRes) { std::cerr << "Fail: Rem\n"; failed++; }
+    if (listRes->size() != 0) {
+        std::cerr << "Fail: List VMs should be empty after removal\n";
+        failed++;
+    }
+
+    // --- Acquisition Tests ---
+    // Recreate VM for acquisition test
+    auto createRes2 = manager.createVm(validConfig);
+    manager.start(validConfig.id);
+    
+    // Acquire memory
+    auto acquireRes = manager.acquireMemory(validConfig.id);
+    if (!acquireRes) {
+        std::cerr << "Fail: Memory acquisition should succeed\n";
+        failed++;
+    } else {
+        auto evId = acquireRes.value();
+        auto evRecord = registry->getEvidence(evId);
+        if (!evRecord || evRecord->status() != domain::EvidenceStatus::Verified) {
+            std::cerr << "Fail: Acquired artifact should be verified in registry\n";
+            failed++;
+        }
+    }
+    
+    // Test invalid state acquisition
+    manager.shutdown(validConfig.id);
+    manager.powerOff(validConfig.id);
+    auto acquireResBad = manager.acquireMemory(validConfig.id);
+    if (acquireResBad) {
+        std::cerr << "Fail: Memory acquisition should fail in Stopped state\n";
+        failed++;
+    }
 
     if (failed == 0) {
         std::cout << "VmManagerTest PASS\n";

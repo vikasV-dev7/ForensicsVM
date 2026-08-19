@@ -40,6 +40,8 @@ public:
     domain::Result<void> shutdown(const domain::VmId& id);
     domain::Result<void> powerOff(const domain::VmId& id);
     domain::Result<void> reset(const domain::VmId& id);
+
+    domain::Result<domain::EvidenceId> acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout = std::chrono::minutes(5));
     
     // Explicitly query reconciled state
     domain::Result<contracts::RuntimeState> queryState(const domain::VmId& id);

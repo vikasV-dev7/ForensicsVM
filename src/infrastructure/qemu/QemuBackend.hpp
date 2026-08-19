@@ -28,6 +28,8 @@ public:
     domain::Result<void> shutdownVm(const domain::VmId& id) override;
     domain::Result<void> powerOffVm(const domain::VmId& id) override;
     domain::Result<void> resetVm(const domain::VmId& id) override;
+
+    domain::Result<domain::AcquisitionResult> acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout) override;
     
     domain::Result<contracts::RuntimeState> queryState(const domain::VmId& id) override;
 

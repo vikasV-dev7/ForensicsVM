@@ -8,7 +8,8 @@ enum class DiskFormat {
     Raw,
     Qcow2,
     Vhdx,
-    Vmdk
+    Vmdk,
+    Elf
 };
 
 class EvidenceSource {

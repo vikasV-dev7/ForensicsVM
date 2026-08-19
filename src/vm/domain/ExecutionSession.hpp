@@ -7,6 +7,7 @@
 #include "VmState.hpp"
 #include "TerminationReason.hpp"
 #include "SessionEvidence.hpp"
+#include "DerivedArtifact.hpp"
 
 namespace fvm::domain {
 
@@ -16,6 +17,7 @@ struct ExecutionSession {
     ExecutionSessionId sessionId;
     VmId vmId;
     std::vector<SessionEvidence> evidence;
+    std::vector<DerivedArtifact> acquiredArtifacts;
     
     std::chrono::system_clock::time_point startTime;
     std::optional<std::chrono::system_clock::time_point> stopTime;

@@ -15,6 +15,18 @@ domain::Result<void> InMemoryBackend::destroyVm(const domain::VmId& id) {
     return {};
 }
 
+domain::Result<domain::AcquisitionResult> InMemoryBackend::acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!states_.contains(id)) return std::unexpected(domain::VmError::VmNotFound);
+    auto st = states_[id];
+    if (st == domain::VmState::Created || st == domain::VmState::Failed || st == domain::VmState::Stopped) {
+        return std::unexpected(domain::VmError::InvalidLifecycleTransition);
+    }
+    
+    // Simulate successful acquisition for testing
+    return domain::AcquisitionResult{ "C:\\temp\\fvm-inmemory-memdump.elf", domain::DiskFormat::Elf };
+}
+
 domain::Result<std::vector<domain::SessionEvidence>> InMemoryBackend::startVm(const domain::VmId& id, const std::vector<domain::EvidenceRecord>& /*resolvedEvidence*/) {
     if (!states_.contains(id)) return std::unexpected(domain::VmError::VmNotFound);
     states_[id] = domain::VmState::Running;

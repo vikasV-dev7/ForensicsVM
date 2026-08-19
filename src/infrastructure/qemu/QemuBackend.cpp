@@ -256,6 +256,48 @@ domain::Result<void> QemuBackend::resetVm(const domain::VmId&) {
     return std::unexpected(domain::VmError::OperationFailed);
 }
 
+domain::Result<domain::AcquisitionResult> QemuBackend::acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout) {
+    std::lock_guard<std::mutex> lock(getVmLock(id));
+    
+    if (!qmpClients_.contains(id) || !processes_.contains(id) || !processes_.at(id)->isRunning()) {
+        return std::unexpected(domain::VmError::InvalidLifecycleTransition);
+    }
+    auto currentState = states_[id];
+    if (currentState == domain::VmState::Created || currentState == domain::VmState::Failed || currentState == domain::VmState::Stopped) {
+        return std::unexpected(domain::VmError::InvalidLifecycleTransition);
+    }
+
+    // Generate temporary path
+    std::filesystem::path tempDir = std::filesystem::canonical(std::filesystem::temp_directory_path());
+    std::string safeId = std::to_string(std::hash<std::string>{}(id.value()));
+    auto now = std::chrono::system_clock::now().time_since_epoch().count();
+    std::string dumpName = "fvm-memdump-" + safeId + "-" + std::to_string(now) + ".elf";
+    std::filesystem::path dumpPath = std::filesystem::weakly_canonical(tempDir / dumpName);
+
+    nlohmann::json args;
+    args["paging"] = false;
+    
+    // QMP expects file:path format, replacing backslashes with forward slashes is safer or just use absolute.
+    // However, on Windows, file:C:\... is problematic if not escaped. 
+    // nlohmann::json handles string escaping natively.
+    std::string protocolPath = dumpPath.string();
+    std::replace(protocolPath.begin(), protocolPath.end(), '\\', '/');
+    args["protocol"] = "file:" + protocolPath;
+
+    auto res = qmpClients_.at(id)->execute("dump-guest-memory", args, timeout);
+    
+    if (!res) {
+        // Cleanup on failure
+        std::error_code ec;
+        if (std::filesystem::exists(dumpPath, ec)) {
+            std::filesystem::remove(dumpPath, ec);
+        }
+        return std::unexpected(domain::VmError::OperationFailed);
+    }
+
+    return domain::AcquisitionResult{ dumpPath.string(), domain::DiskFormat::Elf };
+}
+
 domain::Result<contracts::RuntimeState> QemuBackend::queryState(const domain::VmId& id) {
     std::lock_guard<std::mutex> lock(getVmLock(id));
     

@@ -3,6 +3,8 @@
 #include "vm/domain/VmConfig.hpp"
 #include "vm/domain/VmState.hpp"
 #include "vm/domain/VmError.hpp"
+#include "vm/domain/EvidenceRecord.hpp"
+#include "vm/domain/AcquisitionResult.hpp"
 #include "vm/domain/TerminationReason.hpp"
 #include "vm/domain/SessionEvidence.hpp"
 #include <vector>
@@ -30,6 +32,8 @@ public:
     virtual domain::Result<void> powerOffVm(const domain::VmId& id) = 0;
     virtual domain::Result<void> resetVm(const domain::VmId& id) = 0;
     
+    virtual domain::Result<domain::AcquisitionResult> acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout) = 0;
+
     // queryState evaluates the deterministic lifecycle and returns the reconciled state and termination reason.
     virtual domain::Result<RuntimeState> queryState(const domain::VmId& id) = 0;
 };
