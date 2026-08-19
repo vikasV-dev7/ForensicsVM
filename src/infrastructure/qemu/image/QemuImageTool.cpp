@@ -30,6 +30,7 @@ std::string QemuImageTool::formatToString(domain::DiskFormat format) const {
         case domain::DiskFormat::Qcow2: return "qcow2";
         case domain::DiskFormat::Vhdx: return "vhdx";
         case domain::DiskFormat::Vmdk: return "vmdk";
+        case domain::DiskFormat::Elf: return "elf";
     }
     return "raw";
 }

@@ -2,7 +2,7 @@
 
 namespace fvm::infrastructure::qemu {
 
-QemuLaunchSpec DefaultQemuCommandBuilder::build(const domain::VmId& id, const domain::VmConfig& config, const std::string& executablePath, const std::map<std::string, std::string>& overlayPaths) const {
+QemuLaunchSpec DefaultQemuCommandBuilder::build(const domain::VmId& id, const domain::VmConfig& config, const std::string& executablePath, const std::vector<domain::EvidenceRecord>& resolvedEvidence, const std::map<std::string, std::string>& overlayPaths) const {
     QemuLaunchSpec spec;
     spec.executablePath = executablePath;
     spec.qmpPipeName = "fvm-qmp-" + id.value();
@@ -37,13 +37,18 @@ QemuLaunchSpec DefaultQemuCommandBuilder::build(const domain::VmId& id, const do
         std::string format;
         bool readOnly = false;
         
+        // Find corresponding evidence record
+        auto itEv = std::find_if(resolvedEvidence.begin(), resolvedEvidence.end(),
+            [&storage](const domain::EvidenceRecord& r) { return r.id() == storage.evidenceId; });
+        
+        if (itEv == resolvedEvidence.end()) {
+            continue; // Should not happen if validation passed
+        }
+        
         if (storage.access == domain::AccessMode::Overlay) {
             auto it = overlayPaths.find(storage.diskId);
             if (it == overlayPaths.end()) {
-                // If an overlay was expected but not provided, this is a critical infrastructure error.
-                // We should not proceed. For now, we will fallback to raw/readonly (safe failure mode), 
-                // but this shouldn't happen if QemuBackend is correct.
-                path = storage.evidence.path().string();
+                path = itEv->path().string();
                 format = "raw"; // Fallback safe format
                 readOnly = true; 
             } else {
@@ -52,18 +57,18 @@ QemuLaunchSpec DefaultQemuCommandBuilder::build(const domain::VmId& id, const do
                 readOnly = false;
             }
         } else {
-            path = storage.evidence.path().string();
-            // Map domain DiskFormat to QEMU string
-            switch (storage.evidence.format()) {
+            path = itEv->path().string();
+            switch (itEv->format()) {
                 case domain::DiskFormat::Raw: format = "raw"; break;
                 case domain::DiskFormat::Qcow2: format = "qcow2"; break;
                 case domain::DiskFormat::Vhdx: format = "vhdx"; break;
                 case domain::DiskFormat::Vmdk: format = "vmdk"; break;
+                default: format = "raw"; break;
             }
             readOnly = true; // ReadOnly mode always enforces readonly=on
         }
 
-        std::string driveArg = "file=" + path + ",format=" + format + ",media=disk";
+        std::string driveArg = "file=" + path + ",format=" + format + ",media=disk,id=drive-" + storage.diskId + ",node-name=node-" + storage.diskId;
         if (readOnly) {
             driveArg += ",readonly=on";
         }

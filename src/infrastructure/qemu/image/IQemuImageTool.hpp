@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <expected>
 #include "vm/domain/StorageAttachment.hpp"
+#include "vm/domain/EvidenceSource.hpp"
 
 namespace fvm::infrastructure::qemu::image {
 

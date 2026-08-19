@@ -38,13 +38,35 @@ int main() {
     
     VmManager manager(std::make_unique<InMemoryRepository>(), std::move(backend), registry);
 
+    std::filesystem::path dummyQcow2 = std::filesystem::current_path() / "dummy.qcow2";
+    if (std::filesystem::exists(dummyQcow2)) {
+        std::filesystem::remove(dummyQcow2);
+    }
+    
+    // Create a real qcow2 file using system qemu-img
+    std::string cmd = "qemu-img create -f qcow2 \"" + dummyQcow2.string() + "\" 1M > NUL 2>&1";
+    int res = std::system(cmd.c_str());
+    if (res != 0) {
+        std::cerr << "Fail: Could not create dummy qcow2\n";
+        return 1;
+    }
+    
+    // Ingest the evidence
+    auto ingestRes = registry->ingest(dummyQcow2, DiskFormat::Qcow2);
+    if (!ingestRes) {
+        std::cerr << "Fail: Ingest dummy disk\n";
+        return 1;
+    }
+    auto evId = ingestRes.value();
+
     VmConfig config{
-        VmId("test-mem-vm"),
-        "Mem VM",
+        VmId("test-disk-vm"),
+        "Disk VM",
         "Desc",
         CpuConfig{CpuCount(1), 1, 1, 1},
         MemoryConfig{Megabytes(256), Megabytes(256), Megabytes(256)},
-        {}, {}, FirmwareConfig{}, DisplayConfig{}
+        { StorageAttachment{"disk1", evId, AccessMode::Overlay, BusType::VirtIO, false} },
+        {}, FirmwareConfig{}, DisplayConfig{}
     };
 
     if (!manager.createVm(config)) {
@@ -59,13 +81,13 @@ int main() {
 
     std::this_thread::sleep_for(std::chrono::seconds(2));
 
-    auto acquireRes = manager.acquireMemory(config.id);
+    auto acquireRes = manager.acquireDiskDelta(config.id, "disk1");
     if (!acquireRes) {
-        std::cerr << "Fail: Memory acquisition failed\n";
+        std::cerr << "Fail: Disk delta acquisition failed\n";
         failed++;
     } else {
-        auto evId = acquireRes.value();
-        auto evRecord = registry->getEvidence(evId);
+        auto outEvId = acquireRes.value();
+        auto evRecord = registry->getEvidence(outEvId);
         if (!evRecord) {
             std::cerr << "Fail: Artifact not found in registry\n";
             failed++;
@@ -74,12 +96,12 @@ int main() {
                 std::cerr << "Fail: Artifact not Verified\n";
                 failed++;
             }
-            if (evRecord->format() != DiskFormat::Elf) {
-                std::cerr << "Fail: Artifact format is not Elf\n";
+            if (evRecord->format() != DiskFormat::Qcow2) {
+                std::cerr << "Fail: Artifact format is not Qcow2\n";
                 failed++;
             }
 
-            // Verify ELF magic
+            // Verify QCOW2 magic
             std::ifstream file(evRecord->path(), std::ios::binary);
             if (!file) {
                 std::cerr << "Fail: Could not open artifact file\n";
@@ -87,8 +109,8 @@ int main() {
             } else {
                 char magic[4];
                 file.read(magic, 4);
-                if (magic[0] != 0x7f || magic[1] != 'E' || magic[2] != 'L' || magic[3] != 'F') {
-                    std::cerr << "Fail: Artifact is not an ELF file\n";
+                if (magic[0] != 'Q' || magic[1] != 'F' || magic[2] != 'I' || magic[3] != '\xfb') {
+                    std::cerr << "Fail: Artifact is not a QCOW2 file\n";
                     failed++;
                 }
             }
@@ -107,7 +129,7 @@ int main() {
     manager.removeVm(config.id);
 
     if (failed == 0) {
-        std::cout << "MemoryAcquisitionIntegrationTest PASS\n";
+        std::cout << "DiskDeltaAcquisitionIntegrationTest PASS\n";
         return 0;
     }
     return 1;

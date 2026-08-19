@@ -2,10 +2,12 @@
 #include "vm/contracts/IVirtualizationBackend.hpp"
 #include <unordered_map>
 #include <unordered_set>
+#include <mutex>
 
 namespace fvm::infrastructure::inmemory {
 
 class InMemoryBackend : public fvm::contracts::IVirtualizationBackend {
+    std::mutex mutex_;
     std::unordered_map<domain::VmId, domain::VmState> states_;
 
 public:
@@ -19,6 +21,7 @@ public:
     domain::Result<void> resetVm(const domain::VmId& id) override;
 
     domain::Result<domain::AcquisitionResult> acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout) override;
+    domain::Result<domain::AcquisitionResult> acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout) override;
 
     domain::Result<contracts::RuntimeState> queryState(const domain::VmId& id) override;
 };

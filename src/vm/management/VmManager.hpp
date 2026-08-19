@@ -42,6 +42,7 @@ public:
     domain::Result<void> reset(const domain::VmId& id);
 
     domain::Result<domain::EvidenceId> acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout = std::chrono::minutes(5));
+    domain::Result<domain::EvidenceId> acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout = std::chrono::minutes(15));
     
     // Explicitly query reconciled state
     domain::Result<contracts::RuntimeState> queryState(const domain::VmId& id);

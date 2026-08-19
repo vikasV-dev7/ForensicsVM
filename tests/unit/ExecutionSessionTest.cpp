@@ -10,6 +10,7 @@ void testExecutionSessionCreation() {
         "sess-123-abc",
         VmId("vm-1"),
         {},
+        {},
         std::chrono::system_clock::now(),
         std::nullopt,
         VmState::Starting,
@@ -39,6 +40,7 @@ void testTerminalStates() {
     ExecutionSession session{
         "sess-123",
         VmId("vm-1"),
+        {},
         {},
         std::chrono::system_clock::now(),
         std::chrono::system_clock::now(),

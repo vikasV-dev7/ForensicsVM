@@ -109,6 +109,7 @@ domain::Result<std::string> VmManager::start(const domain::VmId& id) {
         generateSessionId(id.value()),
         id,
         startRes.value(),
+        {}, // acquiredArtifacts
         std::chrono::system_clock::now(),
         std::nullopt,
         domain::VmState::Running,
@@ -207,6 +208,47 @@ domain::Result<domain::EvidenceId> VmManager::acquireMemory(const domain::VmId& 
         auto& session = sessions_.at(id);
         domain::DerivedArtifact artifact{
             "MemoryAcquisition",
+            std::chrono::system_clock::now(),
+            ingestRes.value()
+        };
+        session.acquiredArtifacts.push_back(std::move(artifact));
+    }
+
+    return ingestRes.value();
+}
+
+domain::Result<domain::EvidenceId> VmManager::acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout) {
+    auto stateRes = queryState(id);
+    if (!stateRes) return std::unexpected(stateRes.error());
+    if (stateRes->state == domain::VmState::Created || stateRes->state == domain::VmState::Failed || stateRes->state == domain::VmState::Stopped) {
+        return std::unexpected(domain::VmError::InvalidLifecycleTransition);
+    }
+
+    auto acquireRes = backend_->acquireDiskDelta(id, diskId, timeout);
+    if (!acquireRes) {
+        return std::unexpected(acquireRes.error());
+    }
+
+    std::filesystem::path tempPath = acquireRes->temporaryFilePath;
+    auto ingestRes = registry_->ingest(tempPath, acquireRes->format);
+
+    if (!ingestRes) {
+        std::error_code ec;
+        std::filesystem::remove(tempPath, ec);
+        return std::unexpected(domain::VmError::EvidenceIntegrityFailure);
+    }
+
+    auto evRecord = registry_->getEvidence(ingestRes.value());
+    if (!evRecord || evRecord->status() != domain::EvidenceStatus::Verified) {
+        std::error_code ec;
+        std::filesystem::remove(tempPath, ec);
+        return std::unexpected(domain::VmError::EvidenceIntegrityFailure);
+    }
+
+    if (sessions_.contains(id)) {
+        auto& session = sessions_.at(id);
+        domain::DerivedArtifact artifact{
+            "DiskDeltaAcquisition",
             std::chrono::system_clock::now(),
             ingestRes.value()
         };

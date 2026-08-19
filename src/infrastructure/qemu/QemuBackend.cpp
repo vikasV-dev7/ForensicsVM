@@ -1,6 +1,7 @@
 #include "QemuBackend.hpp"
 #include <iostream>
 #include <system_error>
+#include <thread>
 
 namespace fvm::infrastructure::qemu {
 
@@ -161,6 +162,7 @@ domain::Result<std::vector<domain::SessionEvidence>> QemuBackend::startVm(const 
                 domain::AccessMode::Overlay,
                 overlayPath.string()
             });
+            activeStorageEvidence_[id][storage.diskId] = {matchingRecord->path(), matchingRecord->format()};
         }
     }
 
@@ -168,7 +170,7 @@ domain::Result<std::vector<domain::SessionEvidence>> QemuBackend::startVm(const 
         overlayCleanupTracker_[id] = createdOverlays;
     }
 
-    auto spec = commandBuilder_->build(id, configCache_.at(id), executableRes.value(), overlayPaths);
+    auto spec = commandBuilder_->build(id, configCache_.at(id), executableRes.value(), resolvedEvidence, overlayPaths);
     
     auto process = std::make_unique<WindowsQemuProcess>();
     auto startRes = process->start(spec);
@@ -379,6 +381,149 @@ domain::Result<contracts::RuntimeState> QemuBackend::queryState(const domain::Vm
     }
 
     return contracts::RuntimeState{states_[id], termReasons_[id]};
+}
+
+domain::Result<domain::AcquisitionResult> QemuBackend::acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout) {
+    auto& mtx = getVmLock(id);
+    
+    std::filesystem::path tempOverlay;
+    std::string jobId = "fvm-diskdelta-" + diskId;
+    
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        
+        if (!states_.contains(id)) return std::unexpected(domain::VmError::VmNotFound);
+        if (states_[id] != domain::VmState::Running) {
+            return std::unexpected(domain::VmError::InvalidLifecycleTransition);
+        }
+        
+        auto itDisk = activeStorageEvidence_[id].find(diskId);
+        if (itDisk == activeStorageEvidence_[id].end()) {
+            return std::unexpected(domain::VmError::OperationFailed);
+        }
+        
+        std::filesystem::path evidencePath = itDisk->second.first;
+        domain::DiskFormat format = itDisk->second.second;
+        
+        std::filesystem::path tempDir = std::filesystem::canonical(std::filesystem::temp_directory_path());
+        tempOverlay = tempDir / (jobId + "-" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + ".qcow2");
+        
+        auto imgRes = imageTool_->createOverlay(evidencePath, format, tempOverlay);
+        if (!imgRes) return std::unexpected(domain::VmError::OperationFailed);
+        
+        auto addFile = qmpClients_[id]->execute("blockdev-add", {
+            {"driver", "file"},
+            {"node-name", "file-" + jobId},
+            {"filename", tempOverlay.string()}
+        });
+        if (!addFile) {
+            std::filesystem::remove(tempOverlay);
+            return std::unexpected(domain::VmError::OperationFailed);
+        }
+        
+        auto addQcow2 = qmpClients_[id]->execute("blockdev-add", {
+            {"driver", "qcow2"},
+            {"node-name", "qcow2-" + jobId},
+            {"file", "file-" + jobId}
+        });
+        if (!addQcow2) {
+            qmpClients_[id]->execute("blockdev-del", {{"node-name", "file-" + jobId}});
+            std::filesystem::remove(tempOverlay);
+            return std::unexpected(domain::VmError::OperationFailed);
+        }
+        
+        auto backupRes = qmpClients_[id]->execute("blockdev-backup", {
+            {"job-id", jobId},
+            {"device", "drive-" + diskId},
+            {"target", "qcow2-" + jobId},
+            {"sync", "top"},
+            {"auto-dismiss", false}
+        });
+        
+        if (!backupRes) {
+            qmpClients_[id]->execute("blockdev-del", {{"node-name", "qcow2-" + jobId}});
+            qmpClients_[id]->execute("blockdev-del", {{"node-name", "file-" + jobId}});
+            std::filesystem::remove(tempOverlay);
+            return std::unexpected(domain::VmError::OperationFailed);
+        }
+    }
+    
+    auto startTime = std::chrono::steady_clock::now();
+    bool completed = false;
+    bool success = false;
+    
+    while (!completed) {
+        if (std::chrono::steady_clock::now() - startTime > timeout) {
+            std::lock_guard<std::mutex> lock(mtx);
+            if (states_[id] == domain::VmState::Running) {
+                qmpClients_[id]->execute("block-job-cancel", {{"device", jobId}});
+                
+                for (int i = 0; i < 20; ++i) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    auto jobs = qmpClients_[id]->execute("query-block-jobs");
+                    bool found = false;
+                    if (jobs && jobs.value().contains("return") && jobs.value()["return"].is_array()) {
+                        for (const auto& j : jobs.value()["return"]) {
+                            if (j.contains("device") && j["device"] == jobId) { found = true; break; }
+                        }
+                    }
+                    if (!found) break;
+                }
+                
+                qmpClients_[id]->execute("block-job-dismiss", {{"id", jobId}});
+                qmpClients_[id]->execute("blockdev-del", {{"node-name", "qcow2-" + jobId}});
+                qmpClients_[id]->execute("blockdev-del", {{"node-name", "file-" + jobId}});
+            }
+            std::error_code ec;
+            std::filesystem::remove(tempOverlay, ec);
+            return std::unexpected(domain::VmError::OperationFailed);
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        
+        std::lock_guard<std::mutex> lock(mtx);
+        if (states_[id] != domain::VmState::Running) {
+            std::error_code ec;
+            std::filesystem::remove(tempOverlay, ec);
+            return std::unexpected(domain::VmError::OperationFailed);
+        }
+        
+        auto jobsRes = qmpClients_[id]->execute("query-block-jobs");
+        if (!jobsRes) {
+            std::error_code ec;
+            std::filesystem::remove(tempOverlay, ec);
+            return std::unexpected(domain::VmError::OperationFailed);
+        }
+        
+        if (jobsRes.value().contains("return") && jobsRes.value()["return"].is_array()) {
+            for (const auto& job : jobsRes.value()["return"]) {
+                if (job.contains("device") && job["device"] == jobId) {
+                    if (job.contains("status")) {
+                        std::string status = job["status"];
+                        if (status == "concluded") {
+                            completed = true;
+                            success = !job.contains("error");
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        
+        if (completed) {
+            qmpClients_[id]->execute("block-job-dismiss", {{"id", jobId}});
+            qmpClients_[id]->execute("blockdev-del", {{"node-name", "qcow2-" + jobId}});
+            qmpClients_[id]->execute("blockdev-del", {{"node-name", "file-" + jobId}});
+        }
+    }
+    
+    if (success) {
+        return domain::AcquisitionResult{ tempOverlay.string(), domain::DiskFormat::Qcow2 };
+    }
+    
+    std::error_code ec;
+    std::filesystem::remove(tempOverlay, ec);
+    return std::unexpected(domain::VmError::OperationFailed);
 }
 
 } // namespace fvm::infrastructure::qemu

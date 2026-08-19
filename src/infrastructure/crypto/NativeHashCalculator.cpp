@@ -6,7 +6,9 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <bcrypt.h>
+#ifdef _MSC_VER
 #pragma comment(lib, "bcrypt.lib")
+#endif
 #endif
 
 namespace fvm::infrastructure::crypto {

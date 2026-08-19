@@ -18,7 +18,7 @@ int main() {
         {}, {}, FirmwareConfig{}, DisplayConfig{16, 0, false}
     };
 
-    auto spec = builder.build(VmId("test-vm"), config, "C:\\qemu\\qemu-system-x86_64.exe");
+    auto spec = builder.build(VmId("test-vm"), config, "C:\\qemu\\qemu-system-x86_64.exe", {}, {});
 
     if (spec.executablePath != "C:\\qemu\\qemu-system-x86_64.exe") {
         std::cerr << "Fail: Executable path mismatch\n";
@@ -48,14 +48,14 @@ int main() {
     VmConfig configWithStorage = config;
     configWithStorage.storage.push_back(StorageAttachment{
         "disk1",
-        EvidenceId("ev1-id"),
+        EvidenceId("ev1"),
         AccessMode::ReadOnly,
         BusType::VirtIO,
         true
     });
     configWithStorage.storage.push_back(StorageAttachment{
         "disk2",
-        EvidenceId("ev2-id"),
+        EvidenceId("ev2"),
         AccessMode::Overlay,
         BusType::VirtIO,
         false
@@ -65,18 +65,34 @@ int main() {
         {"disk2", "C:\\overlays\\disk2.qcow2"}
     };
 
-    auto specStorage = builder.build(VmId("test-vm"), configWithStorage, "C:\\qemu\\qemu-system-x86_64.exe", overlayPaths);
+    auto makeEv = [](const char* id, const char* path, DiskFormat format, const char* hash) {
+        EvidenceRecord r(EvidenceId(id), path, format, 1024);
+        r.setVerified(hash);
+        return r;
+    };
+
+    std::vector<EvidenceRecord> resolvedEv = {
+        makeEv("ev1", "C:\\ev1.raw", DiskFormat::Raw, "hash1"),
+        makeEv("ev2", "C:\\ev2.qcow2", DiskFormat::Qcow2, "hash2")
+    };
+
+    auto specStorage = builder.build(VmId("test-vm"), configWithStorage, "C:\\qemu\\qemu-system-x86_64.exe", resolvedEv, overlayPaths);
     
     auto hasArgStorage = [&](const std::string& arg) {
         return std::find(specStorage.arguments.begin(), specStorage.arguments.end(), arg) != specStorage.arguments.end();
     };
 
-    if (!hasArgStorage("file=C:\\ev1.raw,format=raw,media=disk,readonly=on")) {
+    std::cout << "Arguments:\n";
+    for(const auto& arg : specStorage.arguments) {
+        std::cout << "  " << arg << "\n";
+    }
+
+    if (!hasArgStorage("file=C:\\ev1.raw,format=raw,media=disk,id=drive-disk1,node-name=node-disk1,readonly=on")) {
         std::cerr << "Fail: Missing read-only storage argument\n";
         failed++;
     }
 
-    if (!hasArgStorage("file=C:\\overlays\\disk2.qcow2,format=qcow2,media=disk")) {
+    if (!hasArgStorage("file=C:\\overlays\\disk2.qcow2,format=qcow2,media=disk,id=drive-disk2,node-name=node-disk2")) {
         std::cerr << "Fail: Missing overlay storage argument\n";
         failed++;
     }

@@ -30,6 +30,7 @@ public:
     domain::Result<void> resetVm(const domain::VmId& id) override;
 
     domain::Result<domain::AcquisitionResult> acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout) override;
+    domain::Result<domain::AcquisitionResult> acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout) override;
     
     domain::Result<contracts::RuntimeState> queryState(const domain::VmId& id) override;
 
@@ -49,6 +50,7 @@ private:
     std::unordered_map<domain::VmId, std::unique_ptr<QemuProcess>> processes_;
     std::unordered_map<domain::VmId, std::unique_ptr<QmpClient>> qmpClients_;
     std::unordered_map<domain::VmId, std::vector<std::string>> overlayCleanupTracker_;
+    std::unordered_map<domain::VmId, std::map<std::string, std::pair<std::filesystem::path, domain::DiskFormat>>> activeStorageEvidence_;
 
     void cleanupOverlays(const domain::VmId& id);
     std::mutex& getVmLock(const domain::VmId& id);
