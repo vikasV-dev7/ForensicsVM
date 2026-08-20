@@ -8,6 +8,7 @@
 #include "vm/domain/TerminationReason.hpp"
 #include "vm/domain/SessionEvidence.hpp"
 #include <vector>
+#include <stop_token>
 
 namespace fvm::contracts {
 
@@ -32,8 +33,8 @@ public:
     virtual domain::Result<void> powerOffVm(const domain::VmId& id) = 0;
     virtual domain::Result<void> resetVm(const domain::VmId& id) = 0;
     
-    virtual domain::Result<domain::AcquisitionResult> acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout) = 0;
-    virtual domain::Result<domain::AcquisitionResult> acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout) = 0;
+    virtual domain::Result<domain::AcquisitionResult> acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout, std::stop_token stoken = {}) = 0;
+    virtual domain::Result<domain::AcquisitionResult> acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout, std::stop_token stoken = {}) = 0;
 
     // queryState evaluates the deterministic lifecycle and returns the reconciled state and termination reason.
     virtual domain::Result<RuntimeState> queryState(const domain::VmId& id) = 0;

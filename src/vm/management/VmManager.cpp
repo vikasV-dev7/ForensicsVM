@@ -172,14 +172,14 @@ domain::Result<void> VmManager::reset(const domain::VmId& id) {
     return backend_->resetVm(id);
 }
 
-domain::Result<domain::EvidenceId> VmManager::acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout) {
+domain::Result<domain::EvidenceId> VmManager::acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout, std::stop_token stoken) {
     auto stateRes = queryState(id);
     if (!stateRes) return std::unexpected(stateRes.error());
     if (stateRes->state == domain::VmState::Created || stateRes->state == domain::VmState::Failed || stateRes->state == domain::VmState::Stopped) {
         return std::unexpected(domain::VmError::InvalidLifecycleTransition);
     }
 
-    auto acquireRes = backend_->acquireMemory(id, timeout);
+    auto acquireRes = backend_->acquireMemory(id, timeout, stoken);
     if (!acquireRes) {
         return std::unexpected(acquireRes.error());
     }
@@ -217,14 +217,14 @@ domain::Result<domain::EvidenceId> VmManager::acquireMemory(const domain::VmId& 
     return ingestRes.value();
 }
 
-domain::Result<domain::EvidenceId> VmManager::acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout) {
+domain::Result<domain::EvidenceId> VmManager::acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout, std::stop_token stoken) {
     auto stateRes = queryState(id);
     if (!stateRes) return std::unexpected(stateRes.error());
     if (stateRes->state == domain::VmState::Created || stateRes->state == domain::VmState::Failed || stateRes->state == domain::VmState::Stopped) {
         return std::unexpected(domain::VmError::InvalidLifecycleTransition);
     }
 
-    auto acquireRes = backend_->acquireDiskDelta(id, diskId, timeout);
+    auto acquireRes = backend_->acquireDiskDelta(id, diskId, timeout, stoken);
     if (!acquireRes) {
         return std::unexpected(acquireRes.error());
     }

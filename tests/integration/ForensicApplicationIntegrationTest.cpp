@@ -95,3 +95,85 @@ TEST_F(ForensicApplicationIntegrationTest, PathSecurity) {
     EXPECT_FALSE(res.has_value());
 #endif
 }
+
+TEST_F(ForensicApplicationIntegrationTest, Cancellation) {
+    auto app = fvm::core::application::ApplicationBootstrap::createApplication();
+    CaseMetadata meta{"Cancel Case", "", "", 0, 0};
+    ASSERT_TRUE(app->createCase(caseRoot, meta).has_value());
+
+    VmConfig config{VmId{"test-vm-1"}, "test OS", "test desc", 
+        CpuConfig{CpuCount{1}, 1, 1, 1}, 
+        MemoryConfig{Megabytes{1024}, Megabytes{0}, Megabytes{0}}, 
+        std::vector<StorageAttachment>{}, 
+        std::vector<NetworkConfig>{}, 
+        FirmwareConfig{FirmwareType::BIOS, false, false}, 
+        DisplayConfig{}
+    };
+    
+    // launchSession isn't fully mocked for this in the integration test easily, 
+    // but we can test acquireDiskDelta which relies on VmManager.
+    // Wait, the InMemoryBackend needs a running VM. 
+    // Let's just create a VM and start it, then cancel.
+    // The problem is `launchSession` needs a valid EvidenceId if the VmConfig demands it, 
+    // but we can pass an empty config.
+    auto launchRes = app->launchSession(config);
+    ASSERT_TRUE(launchRes.has_value());
+    OperationId launchOp = *launchRes;
+    
+    // Wait for launch to finish
+    for (int i = 0; i < 50; ++i) {
+        if (app->getOperationStatus(launchOp)->state == OperationState::Completed) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    
+    auto acquireRes = app->acquireDiskDelta(VmId{"test-vm-1"});
+    ASSERT_TRUE(acquireRes.has_value());
+    OperationId acqOp = *acquireRes;
+    
+    // Immediately cancel
+    auto cancelRes = app->cancelOperation(acqOp);
+    ASSERT_TRUE(cancelRes.has_value());
+    
+    // Wait for status to reflect cancellation
+    bool cancelled = false;
+    for (int i = 0; i < 50; ++i) {
+        auto status = app->getOperationStatus(acqOp);
+        if (status->state == OperationState::Cancelled) {
+            cancelled = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    
+    EXPECT_TRUE(cancelled) << "Operation was not cancelled successfully";
+}
+
+TEST_F(ForensicApplicationIntegrationTest, ApplicationDestruction) {
+    auto start = std::chrono::steady_clock::now();
+    {
+        auto app = fvm::core::application::ApplicationBootstrap::createApplication();
+        CaseMetadata meta{"Shutdown Case", "", "", 0, 0};
+        app->createCase(caseRoot, meta);
+        
+        VmConfig config{VmId{"test-vm-2"}, "test OS", "test desc", 
+            CpuConfig{CpuCount{1}, 1, 1, 1}, 
+            MemoryConfig{Megabytes{1024}, Megabytes{0}, Megabytes{0}}, 
+            std::vector<StorageAttachment>{}, 
+            std::vector<NetworkConfig>{}, 
+            FirmwareConfig{FirmwareType::BIOS, false, false}, 
+            DisplayConfig{}
+        };
+        app->launchSession(config);
+        
+        // Wait for launch
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        
+        // Start an acquisition and immediately destroy app
+        app->acquireDiskDelta(VmId{"test-vm-2"});
+    }
+    auto end = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    
+    // Destruction should be near instantaneous because of stop_token
+    EXPECT_LT(elapsed.count(), 1000) << "Application destruction took too long, likely deadlocked";
+}

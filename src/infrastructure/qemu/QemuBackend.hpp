@@ -29,8 +29,8 @@ public:
     domain::Result<void> powerOffVm(const domain::VmId& id) override;
     domain::Result<void> resetVm(const domain::VmId& id) override;
 
-    domain::Result<domain::AcquisitionResult> acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout) override;
-    domain::Result<domain::AcquisitionResult> acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout) override;
+    domain::Result<domain::AcquisitionResult> acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout, std::stop_token stoken = {}) override;
+    domain::Result<domain::AcquisitionResult> acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout, std::stop_token stoken = {}) override;
     
     domain::Result<contracts::RuntimeState> queryState(const domain::VmId& id) override;
 

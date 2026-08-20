@@ -14,8 +14,10 @@ ForensicApplicationImpl::ForensicApplicationImpl(
 }
 
 ForensicApplicationImpl::~ForensicApplicationImpl() {
-    // jthreads will automatically wait to join upon destruction.
-    // However, we may want to request cancellation for long-running ops here if appropriate.
+    std::lock_guard<std::mutex> lock(opsMutex_);
+    for (auto& [id, worker] : workers_) {
+        worker.request_stop();
+    }
 }
 
 int64_t ForensicApplicationImpl::getCurrentTimeUnix() {
@@ -307,13 +309,15 @@ std::expected<domain::OperationId, domain::ApplicationError> ForensicApplication
         operations_[opId] = opRec;
         
         workers_[opId] = std::jthread([this, opId, vmId](std::stop_token stoken) {
-            (void)stoken;
-            updateOperationState(opId, domain::OperationState::Starting, "Initializing memory acquisition");
-            updateOperationState(opId, domain::OperationState::Running, "Acquiring memory");
+            updateOperationState(opId, domain::OperationState::Running, "Memory acquisition started");
             
-            auto res = vmManager_->acquireMemory(vmId);
+            auto res = vmManager_->acquireMemory(vmId, std::chrono::minutes(5), stoken);
             if (!res) {
-                updateOperationState(opId, domain::OperationState::Failed, "", "Failed to acquire memory");
+                if (stoken.stop_requested()) {
+                    updateOperationState(opId, domain::OperationState::Cancelled, "Memory acquisition cancelled");
+                } else {
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Failed to acquire memory");
+                }
                 return;
             }
             
@@ -331,22 +335,23 @@ std::expected<domain::OperationId, domain::ApplicationError> ForensicApplication
 std::expected<domain::OperationId, domain::ApplicationError> ForensicApplicationImpl::acquireDiskDelta(const fvm::domain::VmId& vmId) {
     std::lock_guard<std::mutex> sLock(stateMutex_);
     validateCaseOpen();
-
-    auto opId = generateOperationId();
-    domain::OperationRecord opRec{opId, domain::OperationType::AcquireDiskDelta, domain::OperationState::Queued, getCurrentTimeUnix(), 0, 0, "Queued", "", ""};
     
+    auto opId = generateOperationId();
     {
         std::lock_guard<std::mutex> lock(opsMutex_);
-        operations_[opId] = opRec;
+        operations_[opId] = domain::OperationRecord(opId, domain::OperationType::AcquireDiskDelta, domain::OperationState::Queued,
+                                                    getCurrentTimeUnix(), 0, 0, "Queued disk delta acquisition", "", "");
         
         workers_[opId] = std::jthread([this, opId, vmId](std::stop_token stoken) {
-            (void)stoken;
-            updateOperationState(opId, domain::OperationState::Starting, "Initializing disk delta acquisition");
-            updateOperationState(opId, domain::OperationState::Running, "Acquiring disk delta");
+            updateOperationState(opId, domain::OperationState::Running, "Disk delta acquisition started");
             
-            auto res = vmManager_->acquireDiskDelta(vmId, "drive0");
+            auto res = vmManager_->acquireDiskDelta(vmId, "drive0", std::chrono::minutes(15), stoken);
             if (!res) {
-                updateOperationState(opId, domain::OperationState::Failed, "", "Failed to acquire disk delta");
+                if (stoken.stop_requested()) {
+                    updateOperationState(opId, domain::OperationState::Cancelled, "Disk delta acquisition cancelled");
+                } else {
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Failed to acquire disk delta");
+                }
                 return;
             }
             

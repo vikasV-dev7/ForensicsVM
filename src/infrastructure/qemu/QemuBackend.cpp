@@ -258,7 +258,7 @@ domain::Result<void> QemuBackend::resetVm(const domain::VmId&) {
     return std::unexpected(domain::VmError::OperationFailed);
 }
 
-domain::Result<domain::AcquisitionResult> QemuBackend::acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout) {
+domain::Result<domain::AcquisitionResult> QemuBackend::acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout, std::stop_token stoken) {
     std::lock_guard<std::mutex> lock(getVmLock(id));
     
     if (!qmpClients_.contains(id) || !processes_.contains(id) || !processes_.at(id)->isRunning()) {
@@ -279,14 +279,11 @@ domain::Result<domain::AcquisitionResult> QemuBackend::acquireMemory(const domai
     nlohmann::json args;
     args["paging"] = false;
     
-    // QMP expects file:path format, replacing backslashes with forward slashes is safer or just use absolute.
-    // However, on Windows, file:C:\... is problematic if not escaped. 
-    // nlohmann::json handles string escaping natively.
     std::string protocolPath = dumpPath.string();
     std::replace(protocolPath.begin(), protocolPath.end(), '\\', '/');
     args["protocol"] = "file:" + protocolPath;
 
-    auto res = qmpClients_.at(id)->execute("dump-guest-memory", args, timeout);
+    auto res = qmpClients_.at(id)->execute("dump-guest-memory", args, timeout, stoken);
     
     if (!res) {
         // Cleanup on failure
@@ -383,7 +380,7 @@ domain::Result<contracts::RuntimeState> QemuBackend::queryState(const domain::Vm
     return contracts::RuntimeState{states_[id], termReasons_[id]};
 }
 
-domain::Result<domain::AcquisitionResult> QemuBackend::acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout) {
+domain::Result<domain::AcquisitionResult> QemuBackend::acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout, std::stop_token stoken) {
     auto& mtx = getVmLock(id);
     
     std::filesystem::path tempOverlay;
@@ -453,7 +450,7 @@ domain::Result<domain::AcquisitionResult> QemuBackend::acquireDiskDelta(const do
     bool success = false;
     
     while (!completed) {
-        if (std::chrono::steady_clock::now() - startTime > timeout) {
+        if (stoken.stop_requested() || std::chrono::steady_clock::now() - startTime > timeout) {
             std::lock_guard<std::mutex> lock(mtx);
             if (states_[id] == domain::VmState::Running) {
                 qmpClients_[id]->execute("block-job-cancel", {{"device", jobId}});

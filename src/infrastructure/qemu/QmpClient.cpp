@@ -74,7 +74,8 @@ std::expected<void, QmpError> QmpClient::connect(std::chrono::milliseconds timeo
 std::expected<nlohmann::json, QmpError> QmpClient::execute(
     const std::string& command, 
     const nlohmann::json& arguments,
-    std::chrono::milliseconds timeout) 
+    std::chrono::milliseconds timeout,
+    std::stop_token stoken) 
 {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -86,19 +87,23 @@ std::expected<nlohmann::json, QmpError> QmpClient::execute(
 
     std::cout << "[QMP SEND] " << cmd.dump() << "\n";
 
-    if (!writeMessage(cmd, timeout)) {
+    if (!writeMessage(cmd, timeout, stoken)) {
         return std::unexpected(QmpError::ConnectionLost);
     }
 
     auto start = std::chrono::steady_clock::now();
     while (true) {
+        if (stoken.stop_requested()) return std::unexpected(QmpError::CommandFailed);
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
         if (elapsed > timeout) {
             return std::unexpected(QmpError::Timeout);
         }
 
-        auto msg = readMessage(timeout - elapsed);
+        auto msg = readMessage(timeout - elapsed, stoken);
         if (!msg) {
+            if (msg.error() == QmpError::Timeout && stoken.stop_requested()) {
+                return std::unexpected(QmpError::CommandFailed);
+            }
             std::cout << "[QMP RECV ERROR] " << static_cast<int>(msg.error()) << "\n";
             return std::unexpected(msg.error());
         }
@@ -124,7 +129,7 @@ std::vector<nlohmann::json> QmpClient::pollEvents() {
     return events;
 }
 
-bool QmpClient::writeMessage(const nlohmann::json& msg, std::chrono::milliseconds timeout) {
+bool QmpClient::writeMessage(const nlohmann::json& msg, std::chrono::milliseconds timeout, std::stop_token stoken) {
     std::string payload = msg.dump() + "\n";
     OVERLAPPED overlapped{};
     overlapped.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
@@ -135,7 +140,24 @@ bool QmpClient::writeMessage(const nlohmann::json& msg, std::chrono::millisecond
     DWORD bytesWritten = 0;
     bool result = WriteFile(hPipe_, payload.c_str(), static_cast<DWORD>(payload.length()), &bytesWritten, &overlapped);
     if (!result && GetLastError() == ERROR_IO_PENDING) {
-        DWORD waitRes = WaitForSingleObject(overlapped.hEvent, static_cast<DWORD>(timeout.count()));
+        DWORD waitTime = static_cast<DWORD>(timeout.count());
+        DWORD totalWait = 0;
+        DWORD waitRes = WAIT_TIMEOUT;
+        while (totalWait < waitTime) {
+            if (stoken.stop_requested()) {
+                CancelIo(hPipe_);
+                GetOverlappedResult(hPipe_, &overlapped, &bytesWritten, TRUE);
+                CloseHandle(overlapped.hEvent);
+                return false;
+            }
+            DWORD chunk = std::min<DWORD>(50, waitTime - totalWait);
+            waitRes = WaitForSingleObject(overlapped.hEvent, chunk);
+            if (waitRes == WAIT_OBJECT_0) {
+                break;
+            }
+            totalWait += chunk;
+        }
+        
         if (waitRes == WAIT_OBJECT_0) {
             result = GetOverlappedResult(hPipe_, &overlapped, &bytesWritten, FALSE);
         } else {
@@ -148,7 +170,7 @@ bool QmpClient::writeMessage(const nlohmann::json& msg, std::chrono::millisecond
     return result && bytesWritten == payload.length();
 }
 
-std::expected<nlohmann::json, QmpError> QmpClient::readMessage(std::chrono::milliseconds timeout) {
+std::expected<nlohmann::json, QmpError> QmpClient::readMessage(std::chrono::milliseconds timeout, std::stop_token stoken) {
     auto start = std::chrono::steady_clock::now();
 
     char buffer[4096];
@@ -180,7 +202,23 @@ std::expected<nlohmann::json, QmpError> QmpClient::readMessage(std::chrono::mill
         if (!result) {
             if (GetLastError() == ERROR_IO_PENDING) {
                 DWORD waitTime = static_cast<DWORD>((timeout - elapsed).count());
-                DWORD waitRes = WaitForSingleObject(overlapped.hEvent, waitTime);
+                DWORD totalWait = 0;
+                DWORD waitRes = WAIT_TIMEOUT;
+                while (totalWait < waitTime) {
+                    if (stoken.stop_requested()) {
+                        CancelIo(hPipe_);
+                        GetOverlappedResult(hPipe_, &overlapped, &bytesRead, TRUE);
+                        CloseHandle(overlapped.hEvent);
+                        return std::unexpected(QmpError::Timeout);
+                    }
+                    DWORD chunk = std::min<DWORD>(50, waitTime - totalWait);
+                    waitRes = WaitForSingleObject(overlapped.hEvent, chunk);
+                    if (waitRes == WAIT_OBJECT_0) {
+                        break;
+                    }
+                    totalWait += chunk;
+                }
+                
                 if (waitRes == WAIT_OBJECT_0) {
                     if (!GetOverlappedResult(hPipe_, &overlapped, &bytesRead, FALSE)) {
                         CloseHandle(overlapped.hEvent);
@@ -201,6 +239,8 @@ std::expected<nlohmann::json, QmpError> QmpClient::readMessage(std::chrono::mill
         CloseHandle(overlapped.hEvent);
         if (bytesRead > 0) {
             receiveBuffer_.append(buffer, bytesRead);
+        } else {
+            return std::unexpected(QmpError::ConnectionLost);
         }
     }
 }

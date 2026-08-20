@@ -7,6 +7,7 @@
 #include <mutex>
 #include <windows.h>
 #include <nlohmann/json.hpp>
+#include <stop_token>
 #include "QmpError.hpp"
 
 namespace fvm::infrastructure::qemu {
@@ -27,7 +28,8 @@ public:
     std::expected<nlohmann::json, QmpError> execute(
         const std::string& command, 
         const nlohmann::json& arguments = nullptr,
-        std::chrono::milliseconds timeout = std::chrono::seconds(5)
+        std::chrono::milliseconds timeout = std::chrono::seconds(5),
+        std::stop_token stoken = {}
     );
 
     std::vector<nlohmann::json> pollEvents();
@@ -41,8 +43,8 @@ private:
     std::vector<nlohmann::json> pendingEvents_;
     std::string receiveBuffer_;
 
-    std::expected<nlohmann::json, QmpError> readMessage(std::chrono::milliseconds timeout);
-    bool writeMessage(const nlohmann::json& msg, std::chrono::milliseconds timeout);
+    std::expected<nlohmann::json, QmpError> readMessage(std::chrono::milliseconds timeout, std::stop_token stoken = {});
+    bool writeMessage(const nlohmann::json& msg, std::chrono::milliseconds timeout, std::stop_token stoken = {});
 };
 
 } // namespace fvm::infrastructure::qemu

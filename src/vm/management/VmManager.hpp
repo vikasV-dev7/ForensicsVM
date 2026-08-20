@@ -9,7 +9,10 @@
 #include "vm/management/EvidenceRegistry.hpp"
 #include <memory>
 #include <vector>
+#include <chrono>
+#include <mutex>
 #include <unordered_map>
+#include <stop_token>
 
 namespace fvm::management {
 
@@ -41,8 +44,8 @@ public:
     domain::Result<void> powerOff(const domain::VmId& id);
     domain::Result<void> reset(const domain::VmId& id);
 
-    domain::Result<domain::EvidenceId> acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout = std::chrono::minutes(5));
-    domain::Result<domain::EvidenceId> acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout = std::chrono::minutes(15));
+    domain::Result<domain::EvidenceId> acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout = std::chrono::minutes(5), std::stop_token stoken = {});
+    domain::Result<domain::EvidenceId> acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout = std::chrono::minutes(15), std::stop_token stoken = {});
     
     // Explicitly query reconciled state
     domain::Result<contracts::RuntimeState> queryState(const domain::VmId& id);

@@ -20,7 +20,8 @@ domain::Result<void> InMemoryBackend::destroyVm(const domain::VmId& id) {
     return {};
 }
 
-domain::Result<domain::AcquisitionResult> InMemoryBackend::acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout) {
+
+domain::Result<domain::AcquisitionResult> InMemoryBackend::acquireMemory(const domain::VmId& id, std::chrono::milliseconds timeout, std::stop_token stoken) {
     (void)timeout;
     std::lock_guard<std::mutex> lock(mutex_);
     if (!states_.contains(id)) return std::unexpected(domain::VmError::VmNotFound);
@@ -28,6 +29,7 @@ domain::Result<domain::AcquisitionResult> InMemoryBackend::acquireMemory(const d
     if (st != domain::VmState::Running) {
         return std::unexpected(domain::VmError::InvalidLifecycleTransition);
     }
+    if (stoken.stop_requested()) return std::unexpected(domain::VmError::OperationFailed);
     
     // Simulate successful acquisition for testing
     std::filesystem::path tempPath = std::filesystem::current_path() / "fvm-inmemory-memdump.elf";
@@ -38,7 +40,7 @@ domain::Result<domain::AcquisitionResult> InMemoryBackend::acquireMemory(const d
     return domain::AcquisitionResult{ tempPath.string(), domain::DiskFormat::Elf };
 }
 
-domain::Result<domain::AcquisitionResult> InMemoryBackend::acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout) {
+domain::Result<domain::AcquisitionResult> InMemoryBackend::acquireDiskDelta(const domain::VmId& id, const std::string& diskId, std::chrono::milliseconds timeout, std::stop_token stoken) {
     (void)timeout;
     std::lock_guard<std::mutex> lock(mutex_);
     if (!states_.contains(id)) return std::unexpected(domain::VmError::VmNotFound);
@@ -46,6 +48,7 @@ domain::Result<domain::AcquisitionResult> InMemoryBackend::acquireDiskDelta(cons
     if (st == domain::VmState::Created || st == domain::VmState::Failed || st == domain::VmState::Stopped) {
         return std::unexpected(domain::VmError::InvalidLifecycleTransition);
     }
+    if (stoken.stop_requested()) return std::unexpected(domain::VmError::OperationFailed);
     
     // Simulate successful acquisition for testing
     std::filesystem::path tempPath = std::filesystem::current_path() / ("fvm-inmemory-diskdelta-" + diskId + ".qcow2");
