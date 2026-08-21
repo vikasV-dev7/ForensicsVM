@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/">
+        <file>qml/main.qml</file>
+        <file>qml/CaseSelection.qml</file>
+        <file>qml/Dashboard.qml</file>
+    </qresource>
+</RCC>

@@ -83,7 +83,7 @@ std::expected<void, QemuLocator::Error> DefaultQemuLocator::validate(const std::
     std::array<char, 128> buffer;
     DWORD bytesRead;
 
-    while (ReadFile(hReadPipe, buffer.data(), buffer.size() - 1, &bytesRead, nullptr) && bytesRead > 0) {
+    while (ReadFile(hReadPipe, buffer.data(), static_cast<DWORD>(buffer.size() - 1), &bytesRead, nullptr) && bytesRead > 0) {
         buffer[bytesRead] = '\0';
         result += buffer.data();
     }

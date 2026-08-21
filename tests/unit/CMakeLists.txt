@@ -50,17 +50,17 @@ target_link_libraries(ExecutionSessionTest PRIVATE VmDomain)
 add_test(NAME ExecutionSessionTest COMMAND ExecutionSessionTest)
 
 add_executable(EvidenceRecordTest EvidenceRecordTest.cpp)
-target_link_libraries(EvidenceRecordTest PRIVATE VmDomain gtest gtest_main)
+target_link_libraries(EvidenceRecordTest PRIVATE VmDomain GTest::gtest GTest::gtest_main)
 add_test(NAME EvidenceRecordTest COMMAND EvidenceRecordTest)
 
 add_executable(NativeHashCalculatorTest NativeHashCalculatorTest.cpp)
-target_link_libraries(NativeHashCalculatorTest PRIVATE fvm_crypto gtest gtest_main)
+target_link_libraries(NativeHashCalculatorTest PRIVATE fvm_crypto GTest::gtest GTest::gtest_main)
 add_test(NAME NativeHashCalculatorTest COMMAND NativeHashCalculatorTest)
 
 add_executable(EvidenceRegistryTest EvidenceRegistryTest.cpp)
-target_link_libraries(EvidenceRegistryTest PRIVATE VmManagement InMemoryInfrastructure gtest gtest_main)
+target_link_libraries(EvidenceRegistryTest PRIVATE VmManagement InMemoryInfrastructure GTest::gtest GTest::gtest_main)
 add_test(NAME EvidenceRegistryTest COMMAND EvidenceRegistryTest)
 
 add_executable(ApplicationOperationTest ApplicationOperationTest.cpp)
-target_link_libraries(ApplicationOperationTest PRIVATE CoreApplication gtest gtest_main)
+target_link_libraries(ApplicationOperationTest PRIVATE CoreApplication GTest::gtest GTest::gtest_main)
 add_test(NAME ApplicationOperationTest COMMAND ApplicationOperationTest)
