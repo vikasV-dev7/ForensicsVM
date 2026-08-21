@@ -37,7 +37,7 @@ Item {
                 id: pathField
                 Layout.fillWidth: true
                 placeholderText: "Case Directory Path"
-                text: "C:/Forensics/Case001"
+                text: ""
                 color: "white"
                 background: Rectangle {
                     color: "#1e1e1e"
@@ -50,7 +50,7 @@ Item {
                 id: nameField
                 Layout.fillWidth: true
                 placeholderText: "Case Name (For Creation)"
-                text: "Operation Takedown"
+                text: ""
                 color: "white"
                 background: Rectangle {
                     color: "#1e1e1e"
@@ -63,7 +63,7 @@ Item {
                 id: invField
                 Layout.fillWidth: true
                 placeholderText: "Investigator (For Creation)"
-                text: "Alice"
+                text: ""
                 color: "white"
                 background: Rectangle {
                     color: "#1e1e1e"

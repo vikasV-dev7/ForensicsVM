@@ -17,6 +17,9 @@ public:
     std::expected<std::string, fvm::contracts::HashError> calculateSha256(const std::filesystem::path&) override {
         return "dummy-hash";
     }
+    std::expected<std::string, fvm::contracts::HashError> calculateSha256(const std::string&) override {
+        return "dummy-hash";
+    }
 };
 
 int main() {

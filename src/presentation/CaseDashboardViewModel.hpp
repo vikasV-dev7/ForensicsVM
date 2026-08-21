@@ -14,6 +14,7 @@ class CaseDashboardViewModel : public QObject {
     Q_PROPERTY(QString caseId READ caseId NOTIFY caseDetailsChanged)
     Q_PROPERTY(QString caseName READ caseName NOTIFY caseDetailsChanged)
     Q_PROPERTY(QVariantList evidenceList READ evidenceList NOTIFY evidenceListChanged)
+    Q_PROPERTY(QVariantList vmList READ vmList NOTIFY vmListChanged)
     Q_PROPERTY(OperationManagerViewModel* operationManager READ operationManager CONSTANT)
 
 public:
@@ -24,6 +25,7 @@ public:
     QString caseId() const;
     QString caseName() const;
     QVariantList evidenceList() const;
+    QVariantList vmList() const;
     OperationManagerViewModel* operationManager() const;
 
     Q_INVOKABLE void importEvidence(const QString& sourcePath);
@@ -35,6 +37,7 @@ public:
 signals:
     void caseDetailsChanged();
     void evidenceListChanged();
+    void vmListChanged();
     void errorOccurred(const QString& message);
 
 private:
@@ -44,6 +47,7 @@ private:
     QString m_caseId;
     QString m_caseName;
     QVariantList m_evidenceList;
+    QVariantList m_vmList;
 };
 
 } // namespace fvm::presentation

@@ -95,6 +95,22 @@ std::expected<void, domain::ApplicationError> ForensicApplicationImpl::createCas
         return std::unexpected(domain::ApplicationError("Failed to create case in repository"));
     }
 
+    caseRepo_->beginTransaction();
+    domain::AuditRecord audit;
+    audit.eventId = generateOperationId().value();
+    audit.timestampUnixMs = getCurrentTimeUnix() * 1000;
+    audit.eventType = "CASE_CREATED";
+    audit.payloadFields = {
+        {"action", "CASE_CREATED"},
+        {"case_id", newCase.getId().value()},
+        {"timestamp", audit.timestampUnixMs}
+    };
+    
+    auto commitRes = caseRepo_->commitTransaction(audit);
+    if (!commitRes) {
+        return std::unexpected(domain::ApplicationError("Failed to persist case creation audit record"));
+    }
+
     activeCase_ = std::move(newCase);
     activeCaseRoot_ = canonicalRoot;
     
@@ -127,6 +143,25 @@ std::expected<void, domain::ApplicationError> ForensicApplicationImpl::openCase(
 
     activeCase_ = std::move(*loadRes);
     activeCaseRoot_ = canonicalRoot;
+    
+    caseRepo_->beginTransaction();
+    domain::AuditRecord audit;
+    audit.eventId = generateOperationId().value();
+    audit.timestampUnixMs = getCurrentTimeUnix() * 1000;
+    audit.eventType = "CASE_OPENED";
+    audit.payloadFields = {
+        {"action", "CASE_OPENED"},
+        {"case_id", activeCase_->getId().value()},
+        {"timestamp", audit.timestampUnixMs}
+    };
+    
+    auto commitRes = caseRepo_->commitTransaction(audit);
+    if (!commitRes) {
+        activeCase_.reset();
+        activeCaseRoot_.clear();
+        return std::unexpected(domain::ApplicationError("Failed to persist case open audit record"));
+    }
+    
     return {};
 }
 
@@ -190,24 +225,49 @@ std::expected<domain::OperationId, domain::ApplicationError> ForensicApplication
             
             updateOperationState(opId, domain::OperationState::Hashing, "Registering evidence with core");
             
-            fvm::domain::EvidenceSource source(destPath, fvm::domain::DiskFormat::Raw);
-            auto regRes = evidenceRegistry_->ingest(destPath, fvm::domain::DiskFormat::Raw);
-            if (!regRes) {
-                updateOperationState(opId, domain::OperationState::Failed, "", "Failed to register evidence with backend");
-                return;
-            }
-            
             {
                 std::lock_guard<std::mutex> l(stateMutex_);
-                if (activeCase_) {
-                    activeCase_->addEvidenceId(*regRes);
-                    (void)caseRepo_->saveCase(*activeCase_, activeCaseRoot_);
+                if (!activeCase_) {
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Case closed during operation");
+                    return;
                 }
-            }
-            
-            {
-                std::lock_guard<std::mutex> l(opsMutex_);
-                operations_[opId].resultReference = regRes->value();
+                
+                caseRepo_->beginTransaction();
+                
+                fvm::domain::EvidenceSource source(destPath, fvm::domain::DiskFormat::Raw);
+                auto regRes = evidenceRegistry_->ingest(destPath, fvm::domain::DiskFormat::Raw);
+                if (!regRes) {
+                    caseRepo_->rollbackTransaction();
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Failed to register evidence with backend: " + regRes.error());
+                    return;
+                }
+                
+                auto caseCopy = *activeCase_;
+                caseCopy.addEvidenceId(*regRes);
+                caseRepo_->saveCase(caseCopy, activeCaseRoot_);
+                
+                domain::AuditRecord audit;
+                audit.eventId = opId.value();
+                audit.timestampUnixMs = getCurrentTimeUnix() * 1000;
+                audit.eventType = "EVIDENCE_IMPORTED";
+                audit.payloadFields = {
+                    {"action", "EVIDENCE_IMPORTED"},
+                    {"evidence_id", regRes->value()},
+                    {"timestamp", audit.timestampUnixMs}
+                };
+                
+                auto commitRes = caseRepo_->commitTransaction(audit);
+                if (!commitRes) {
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Failed to persist audit record for evidence import");
+                    return;
+                }
+                
+                *activeCase_ = std::move(caseCopy);
+                
+                {
+                    std::lock_guard<std::mutex> opsL(opsMutex_);
+                    operations_[opId].resultReference = regRes->value();
+                }
             }
             
             updateOperationState(opId, domain::OperationState::Completed, "Evidence imported successfully");
@@ -238,29 +298,55 @@ std::expected<domain::OperationId, domain::ApplicationError> ForensicApplication
             updateOperationState(opId, domain::OperationState::Starting, "Preparing session");
             updateOperationState(opId, domain::OperationState::Running, "Launching session");
             
-            auto createRes = vmManager_->createVm(config);
-            if (!createRes) {
-                updateOperationState(opId, domain::OperationState::Failed, "", "Failed to create VM session");
-                return;
-            }
-            
-            auto res = vmManager_->start(*createRes);
-            if (!res) {
-                updateOperationState(opId, domain::OperationState::Failed, "", "Failed to start VM session");
-                return;
-            }
-            
             {
                 std::lock_guard<std::mutex> l(stateMutex_);
-                if (activeCase_) {
-                    activeCase_->addVmId(*createRes);
-                    (void)caseRepo_->saveCase(*activeCase_, activeCaseRoot_);
+                if (!activeCase_) {
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Case closed during operation");
+                    return;
                 }
-            }
-            
-            {
-                std::lock_guard<std::mutex> l(opsMutex_);
-                operations_[opId].resultReference = createRes->value();
+                
+                caseRepo_->beginTransaction();
+                
+                auto createRes = vmManager_->createVm(config);
+                if (!createRes) {
+                    caseRepo_->rollbackTransaction();
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Failed to create VM session");
+                    return;
+                }
+                
+                auto caseCopy = *activeCase_;
+                caseCopy.addVmId(*createRes);
+                caseRepo_->saveCase(caseCopy, activeCaseRoot_);
+                
+                domain::AuditRecord audit;
+                audit.eventId = opId.value();
+                audit.timestampUnixMs = getCurrentTimeUnix() * 1000;
+                audit.eventType = "SESSION_LAUNCHED";
+                audit.payloadFields = {
+                    {"action", "SESSION_LAUNCHED"},
+                    {"session_id", createRes->value()},
+                    {"timestamp", audit.timestampUnixMs}
+                };
+                
+                auto commitRes = caseRepo_->commitTransaction(audit);
+                if (!commitRes) {
+                    // Note: In a real system we would terminate the VM here before returning.
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Failed to persist audit record for session launch");
+                    return;
+                }
+                
+                *activeCase_ = std::move(caseCopy);
+                
+                auto res = vmManager_->start(*createRes);
+                if (!res) {
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Failed to start VM session");
+                    return;
+                }
+                
+                {
+                    std::lock_guard<std::mutex> opsL(opsMutex_);
+                    operations_[opId].resultReference = createRes->value();
+                }
             }
             
             updateOperationState(opId, domain::OperationState::Completed, "Session launched successfully");
@@ -285,10 +371,36 @@ std::expected<domain::OperationId, domain::ApplicationError> ForensicApplication
             updateOperationState(opId, domain::OperationState::Starting, "Preparing to stop session");
             updateOperationState(opId, domain::OperationState::Running, "Stopping session");
             
-            auto res = vmManager_->powerOff(vmId);
-            if (!res) {
-                updateOperationState(opId, domain::OperationState::Failed, "", "Failed to stop session");
-                return;
+            {
+                std::lock_guard<std::mutex> l(stateMutex_);
+                if (!activeCase_) {
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Case closed during operation");
+                    return;
+                }
+                
+                caseRepo_->beginTransaction();
+                auto res = vmManager_->powerOff(vmId);
+                if (!res) {
+                    caseRepo_->rollbackTransaction();
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Failed to stop session");
+                    return;
+                }
+                
+                domain::AuditRecord audit;
+                audit.eventId = opId.value();
+                audit.timestampUnixMs = getCurrentTimeUnix() * 1000;
+                audit.eventType = "SESSION_STOPPED";
+                audit.payloadFields = {
+                    {"action", "SESSION_STOPPED"},
+                    {"session_id", vmId.value()},
+                    {"timestamp", audit.timestampUnixMs}
+                };
+                
+                auto commitRes = caseRepo_->commitTransaction(audit);
+                if (!commitRes) {
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Failed to persist audit record for session stop");
+                    return;
+                }
             }
             
             updateOperationState(opId, domain::OperationState::Completed, "Session stopped successfully");
@@ -311,19 +423,46 @@ std::expected<domain::OperationId, domain::ApplicationError> ForensicApplication
         workers_[opId] = std::jthread([this, opId, vmId](std::stop_token stoken) {
             updateOperationState(opId, domain::OperationState::Running, "Memory acquisition started");
             
-            auto res = vmManager_->acquireMemory(vmId, std::chrono::minutes(5), stoken);
-            if (!res) {
-                if (stoken.stop_requested()) {
-                    updateOperationState(opId, domain::OperationState::Cancelled, "Memory acquisition cancelled");
-                } else {
-                    updateOperationState(opId, domain::OperationState::Failed, "", "Failed to acquire memory");
-                }
-                return;
-            }
-            
             {
-                std::lock_guard<std::mutex> l(opsMutex_);
-                operations_[opId].resultReference = res->value();
+                std::lock_guard<std::mutex> l(stateMutex_);
+                if (!activeCase_) {
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Case closed during operation");
+                    return;
+                }
+                
+                caseRepo_->beginTransaction();
+                auto res = vmManager_->acquireMemory(vmId, std::chrono::minutes(5), stoken);
+                if (!res) {
+                    caseRepo_->rollbackTransaction();
+                    if (stoken.stop_requested()) {
+                        updateOperationState(opId, domain::OperationState::Cancelled, "Memory acquisition cancelled");
+                    } else {
+                        updateOperationState(opId, domain::OperationState::Failed, "", "Failed to acquire memory");
+                    }
+                    return;
+                }
+                
+                domain::AuditRecord audit;
+                audit.eventId = opId.value();
+                audit.timestampUnixMs = getCurrentTimeUnix() * 1000;
+                audit.eventType = "MEMORY_ACQUIRED";
+                audit.payloadFields = {
+                    {"action", "MEMORY_ACQUIRED"},
+                    {"artifact_id", res->value()},
+                    {"session_id", vmId.value()},
+                    {"timestamp", audit.timestampUnixMs}
+                };
+                
+                auto commitRes = caseRepo_->commitTransaction(audit);
+                if (!commitRes) {
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Failed to persist audit record for memory acquisition");
+                    return;
+                }
+                
+                {
+                    std::lock_guard<std::mutex> opsL(opsMutex_);
+                    operations_[opId].resultReference = res->value();
+                }
             }
             
             updateOperationState(opId, domain::OperationState::Completed, "Memory acquisition completed");
@@ -345,19 +484,46 @@ std::expected<domain::OperationId, domain::ApplicationError> ForensicApplication
         workers_[opId] = std::jthread([this, opId, vmId](std::stop_token stoken) {
             updateOperationState(opId, domain::OperationState::Running, "Disk delta acquisition started");
             
-            auto res = vmManager_->acquireDiskDelta(vmId, "drive0", std::chrono::minutes(15), stoken);
-            if (!res) {
-                if (stoken.stop_requested()) {
-                    updateOperationState(opId, domain::OperationState::Cancelled, "Disk delta acquisition cancelled");
-                } else {
-                    updateOperationState(opId, domain::OperationState::Failed, "", "Failed to acquire disk delta");
-                }
-                return;
-            }
-            
             {
-                std::lock_guard<std::mutex> l(opsMutex_);
-                operations_[opId].resultReference = res->value();
+                std::lock_guard<std::mutex> l(stateMutex_);
+                if (!activeCase_) {
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Case closed during operation");
+                    return;
+                }
+                
+                caseRepo_->beginTransaction();
+                auto res = vmManager_->acquireDiskDelta(vmId, "drive0", std::chrono::minutes(15), stoken);
+                if (!res) {
+                    caseRepo_->rollbackTransaction();
+                    if (stoken.stop_requested()) {
+                        updateOperationState(opId, domain::OperationState::Cancelled, "Disk delta acquisition cancelled");
+                    } else {
+                        updateOperationState(opId, domain::OperationState::Failed, "", "Failed to acquire disk delta");
+                    }
+                    return;
+                }
+                
+                domain::AuditRecord audit;
+                audit.eventId = opId.value();
+                audit.timestampUnixMs = getCurrentTimeUnix() * 1000;
+                audit.eventType = "DISK_DELTA_ACQUIRED";
+                audit.payloadFields = {
+                    {"action", "DISK_DELTA_ACQUIRED"},
+                    {"artifact_id", res->value()},
+                    {"session_id", vmId.value()},
+                    {"timestamp", audit.timestampUnixMs}
+                };
+                
+                auto commitRes = caseRepo_->commitTransaction(audit);
+                if (!commitRes) {
+                    updateOperationState(opId, domain::OperationState::Failed, "", "Failed to persist audit record for disk delta acquisition");
+                    return;
+                }
+                
+                {
+                    std::lock_guard<std::mutex> opsL(opsMutex_);
+                    operations_[opId].resultReference = res->value();
+                }
             }
             
             updateOperationState(opId, domain::OperationState::Completed, "Disk delta acquisition completed");

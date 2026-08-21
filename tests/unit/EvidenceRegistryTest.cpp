@@ -19,6 +19,11 @@ public:
         if (shouldFail) return std::unexpected(HashError::CryptoError);
         return fixedHash;
     }
+    
+    std::expected<std::string, HashError> calculateSha256(const std::string&) override {
+        if (shouldFail) return std::unexpected(HashError::CryptoError);
+        return fixedHash;
+    }
 };
 
 class EvidenceRegistryTest : public ::testing::Test {

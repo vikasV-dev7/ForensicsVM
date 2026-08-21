@@ -18,6 +18,7 @@ public:
     virtual ~IHashCalculator() = default;
 
     virtual std::expected<std::string, HashError> calculateSha256(const std::filesystem::path& path) = 0;
+    virtual std::expected<std::string, HashError> calculateSha256(const std::string& data) = 0;
 };
 
 } // namespace fvm::contracts

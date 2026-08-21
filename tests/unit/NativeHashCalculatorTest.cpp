@@ -44,7 +44,7 @@ TEST_F(NativeHashCalculatorTest, HashKnownContent) {
 
 TEST_F(NativeHashCalculatorTest, HashFileNotFound) {
     NativeHashCalculator calc;
-    auto res = calc.calculateSha256("C:\\nonexistent_fvm_test_file.dat");
+    auto res = calc.calculateSha256(std::filesystem::path("C:\\nonexistent_fvm_test_file.dat"));
     ASSERT_FALSE(res.has_value());
     EXPECT_EQ(res.error(), fvm::contracts::HashError::FileNotFound);
 }

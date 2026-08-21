@@ -163,10 +163,18 @@ TEST_F(ForensicApplicationIntegrationTest, ApplicationDestruction) {
             FirmwareConfig{FirmwareType::BIOS, false, false}, 
             DisplayConfig{}
         };
-        app->launchSession(config);
+        auto opId = app->launchSession(config);
+        ASSERT_TRUE(opId.has_value());
         
-        // Wait for launch
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        // Wait for launch to finish completely so we don't have lock contention on VmManager mutex
+        for (int i = 0; i < 100; ++i) {
+            auto status = app->getOperationStatus(*opId);
+            if (status->state == OperationState::Completed) break;
+            if (status->state == OperationState::Failed) {
+                FAIL() << "launchSession failed: " << status->error;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
         
         // Start an acquisition and immediately destroy app
         app->acquireDiskDelta(VmId{"test-vm-2"});

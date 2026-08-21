@@ -18,8 +18,10 @@ void CaseDashboardViewModel::refresh() {
         m_caseId.clear();
         m_caseName.clear();
         m_evidenceList.clear();
+        m_vmList.clear();
         emit caseDetailsChanged();
         emit evidenceListChanged();
+        emit vmListChanged();
         return;
     }
 
@@ -27,11 +29,20 @@ void CaseDashboardViewModel::refresh() {
     if (activeCase.has_value()) {
         m_caseId = QString::fromStdString(activeCase->getId().value());
         m_caseName = QString::fromStdString(activeCase->getMetadata().name);
+        
+        m_vmList.clear();
+        for (const auto& vmId : activeCase->getVmIds()) {
+            QVariantMap vmMap;
+            vmMap["id"] = QString::fromStdString(vmId.value());
+            m_vmList.append(vmMap);
+        }
     } else {
         m_caseId.clear();
         m_caseName.clear();
+        m_vmList.clear();
     }
     emit caseDetailsChanged();
+    emit vmListChanged();
 
     auto evidenceResult = m_backend->listEvidence();
     m_evidenceList.clear();
@@ -48,6 +59,7 @@ void CaseDashboardViewModel::refresh() {
 QString CaseDashboardViewModel::caseId() const { return m_caseId; }
 QString CaseDashboardViewModel::caseName() const { return m_caseName; }
 QVariantList CaseDashboardViewModel::evidenceList() const { return m_evidenceList; }
+QVariantList CaseDashboardViewModel::vmList() const { return m_vmList; }
 OperationManagerViewModel* CaseDashboardViewModel::operationManager() const { return m_operationManager; }
 
 void CaseDashboardViewModel::importEvidence(const QString& sourcePath) {
@@ -65,7 +77,7 @@ void CaseDashboardViewModel::launchSession(const QString& vmIdStr) {
     if (!m_backend) return;
     fvm::domain::VmConfig config { 
         fvm::domain::VmId(vmIdStr.toStdString()), // id
-        "Temp VM", // name
+        "Interactive Session", // name
         "", // description
         fvm::domain::CpuConfig { fvm::domain::CpuCount(1) }, // cpu
         fvm::domain::MemoryConfig { fvm::domain::Megabytes(1024) }, // memory

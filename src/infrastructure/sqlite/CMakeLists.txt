@@ -20,6 +20,10 @@ endif()
 
 add_library(SqliteInfrastructure STATIC
     SqliteCaseRepository.cpp
+    DatabaseContext.cpp
+    CanonicalJsonSerializer.cpp
+    SqliteVmRepository.cpp
+    SqliteEvidenceRepository.cpp
 )
 target_include_directories(SqliteInfrastructure PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(SqliteInfrastructure PUBLIC CoreApplication sqlite3)

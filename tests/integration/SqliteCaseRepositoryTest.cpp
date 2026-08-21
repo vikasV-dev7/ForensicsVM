@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include "infrastructure/sqlite/SqliteCaseRepository.hpp"
+#include "infrastructure/sqlite/DatabaseContext.hpp"
+#include "infrastructure/crypto/NativeHashCalculator.hpp"
 #include <filesystem>
 #include <fstream>
 #include <thread>
@@ -25,7 +27,9 @@ protected:
 };
 
 TEST_F(SqliteCaseRepositoryTest, CreateAndLoadCase) {
-    SqliteCaseRepository repo;
+    auto hasher = std::make_shared<fvm::infrastructure::crypto::NativeHashCalculator>();
+    auto dbContext = std::make_shared<fvm::infrastructure::sqlite::DatabaseContext>(hasher);
+    SqliteCaseRepository repo(dbContext);
     CaseMetadata meta{"Test Case", "Description", "Investigator", 100, 200};
     Case newCase(CaseId("case-1"), meta);
     
@@ -34,6 +38,15 @@ TEST_F(SqliteCaseRepositoryTest, CreateAndLoadCase) {
 
     auto res = repo.createCase(newCase, tempDir);
     ASSERT_TRUE(res.has_value()) << "Failed to create case";
+
+    fvm::core::application::domain::AuditRecord audit;
+    audit.eventId = "event-1";
+    audit.timestampUnixMs = 12345;
+    audit.eventType = "CaseCreated";
+    audit.payload = "{}";
+    
+    repo.beginTransaction();
+    repo.commitTransaction(audit);
 
     auto loadRes = repo.loadCase(tempDir);
     ASSERT_TRUE(loadRes.has_value()) << "Failed to load case";
@@ -50,19 +63,37 @@ TEST_F(SqliteCaseRepositoryTest, CreateAndLoadCase) {
 }
 
 TEST_F(SqliteCaseRepositoryTest, RelocateCase) {
-    SqliteCaseRepository repo;
-    CaseMetadata meta{"Relocatable", "Desc", "Inv", 1, 1};
-    Case newCase(CaseId("case-2"), meta);
+    {
+        auto hasher = std::make_shared<fvm::infrastructure::crypto::NativeHashCalculator>();
+        auto dbContext = std::make_shared<fvm::infrastructure::sqlite::DatabaseContext>(hasher);
+        SqliteCaseRepository repo(dbContext);
+        CaseMetadata meta{"Relocatable", "Desc", "Inv", 1, 1};
+        Case newCase(CaseId("case-2"), meta);
 
-    auto res = repo.createCase(newCase, tempDir);
-    ASSERT_TRUE(res.has_value());
+        auto res = repo.createCase(newCase, tempDir);
+        ASSERT_TRUE(res.has_value());
+
+        fvm::core::application::domain::AuditRecord audit;
+        audit.eventId = "event-2";
+        audit.timestampUnixMs = 12345;
+        audit.eventType = "CaseCreated";
+        audit.payload = "{}";
+        
+        repo.beginTransaction();
+        repo.commitTransaction(audit);
+    }
 
     std::filesystem::path newLocation = tempDir.parent_path() / (tempDir.filename().string() + "_moved");
     std::filesystem::rename(tempDir, newLocation);
 
-    auto loadRes = repo.loadCase(newLocation);
-    ASSERT_TRUE(loadRes.has_value());
-    EXPECT_EQ(loadRes->getId().value(), "case-2");
+    {
+        auto hasher2 = std::make_shared<fvm::infrastructure::crypto::NativeHashCalculator>();
+        auto dbContext2 = std::make_shared<fvm::infrastructure::sqlite::DatabaseContext>(hasher2);
+        SqliteCaseRepository repo2(dbContext2);
+        auto loadRes = repo2.loadCase(newLocation);
+        ASSERT_TRUE(loadRes.has_value());
+        EXPECT_EQ(loadRes->getId().value(), "case-2");
+    }
 
     std::filesystem::remove_all(newLocation);
 }

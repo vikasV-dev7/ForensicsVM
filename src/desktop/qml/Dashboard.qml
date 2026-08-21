@@ -37,43 +37,63 @@ Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.preferredWidth: 60
-                
-                Text {
-                    text: "Virtual Machines"
-                    color: "white"
-                    font.pixelSize: 18
-                }
-                
-                // Example hardcoded VM for Phase 6
-                Rectangle {
+                RowLayout {
                     Layout.fillWidth: true
-                    height: 120
-                    color: "#2a2a2a"
-                    border.color: "#444"
-                    radius: 5
                     
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 10
-                        
-                        Text {
-                            text: "VM-1 (Win10-Test)"
-                            color: "white"
-                            font.bold: true
-                        }
-                        
-                        RowLayout {
-                            Button { text: "Start"; onClicked: dashboardViewModel.launchSession("00000000-0000-0000-0000-000000000001") }
-                            Button { text: "Stop"; onClicked: dashboardViewModel.stopSession("00000000-0000-0000-0000-000000000001") }
-                        }
-                        RowLayout {
-                            Button { text: "Acquire Memory"; onClicked: dashboardViewModel.acquireMemory("00000000-0000-0000-0000-000000000001") }
-                            Button { text: "Acquire Disk Delta"; onClicked: dashboardViewModel.acquireDiskDelta("00000000-0000-0000-0000-000000000001") }
+                    Text {
+                        text: "Virtual Machines"
+                        color: "white"
+                        font.pixelSize: 18
+                        Layout.fillWidth: true
+                    }
+                    
+                    Button {
+                        text: "New Session"
+                        onClicked: {
+                            // Generate a simple unique ID
+                            function s4() { return Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1); }
+                            var uuid = s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
+                            dashboardViewModel.launchSession(uuid)
                         }
                     }
                 }
                 
-                Item { Layout.fillHeight: true } // Spacer
+                ListView {
+                    id: vmListView
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    model: dashboardViewModel.vmList
+                    
+                    delegate: Rectangle {
+                        width: ListView.view.width
+                        height: 120
+                        color: "#2a2a2a"
+                        border.color: "#444"
+                        radius: 5
+                        margin: 5
+                        
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            
+                            Text {
+                                text: "VM: " + modelData.id
+                                color: "white"
+                                font.bold: true
+                            }
+                            
+                            RowLayout {
+                                Button { text: "Start"; onClicked: dashboardViewModel.launchSession(modelData.id) }
+                                Button { text: "Stop"; onClicked: dashboardViewModel.stopSession(modelData.id) }
+                            }
+                            RowLayout {
+                                Button { text: "Acquire Memory"; onClicked: dashboardViewModel.acquireMemory(modelData.id) }
+                                Button { text: "Acquire Disk Delta"; onClicked: dashboardViewModel.acquireDiskDelta(modelData.id) }
+                            }
+                        }
+                    }
+                }
             }
             
             // Right Column (Evidence / Status)
